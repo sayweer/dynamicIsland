@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>DynamicIsland</string>
+	<key>CFBundleDisplayName</key>
+	<string>Dynamic Island</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.opensource.DynamicIsland</string>
+	<key>CFBundleExecutable</key>
+	<string>DynamicIsland</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Kamera aynası özelliği, çentikte hızlı görünüş kontrolü için kameranızı kullanır.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Apple Music ve Spotify'daki çalan parçayı görüntülemek ve kontrol etmek için kullanılır.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Günün etkinliklerini çentikte göstermek için takviminize erişir.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Günün etkinliklerini çentikte göstermek için takviminize erişir.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Bekleyen anımsatıcılarınızı çentikte göstermek için erişir.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Bekleyen anımsatıcılarınızı çentikte göstermek ve tamamlamak için erişir.</string>
+</dict>
+</plist>
