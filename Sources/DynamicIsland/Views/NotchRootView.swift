@@ -16,6 +16,8 @@ struct NotchRootView: View {
 struct IslandView: View {
     @EnvironmentObject private var vm: NotchViewModel
     @EnvironmentObject private var shelf: ShelfManager
+    @EnvironmentObject private var prefs: Preferences
+    @State private var hoverWorkItem: DispatchWorkItem?
 
     private var shape: NotchShape {
         NotchShape(bottomRadius: vm.isExpanded ? 24 : 12)
@@ -59,12 +61,16 @@ struct IslandView: View {
         .contentShape(shape)
         .onHover { inside in
             vm.isMouseInside = inside
+            hoverWorkItem?.cancel()
             if inside {
-                if UserDefaults.standard.bool(forKey: SettingsKeys.hoverToExpand) {
-                    vm.expand()
+                guard prefs.hoverToExpand, !vm.isExpanded else { return }
+                let work = DispatchWorkItem {
+                    if vm.isMouseInside { vm.expand() }
                 }
+                hoverWorkItem = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + prefs.hoverDelay, execute: work)
             } else {
-                vm.collapse(afterDelay: 0.4)
+                vm.collapse(afterDelay: prefs.collapseDelay)
             }
         }
         .onTapGesture {

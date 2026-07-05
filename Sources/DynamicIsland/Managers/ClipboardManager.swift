@@ -57,8 +57,11 @@ final class ClipboardManager: ObservableObject {
         guard !types.contains(where: { ignoredTypes.contains($0) }) else { return }
 
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
-           let first = urls.first {
-            add(kind: .file, value: first.path, contentKey: "file:\(first.path)")
+           !urls.isEmpty {
+            // Çoklu dosya kopyalandığında hepsini yakala (listede aynı sıra korunur).
+            for url in urls.reversed() {
+                add(kind: .file, value: url.path, contentKey: "file:\(url.path)")
+            }
         } else if types.contains(.tiff) || types.contains(.png),
                   let image = NSImage(pasteboard: pasteboard) {
             addImage(image)

@@ -5,6 +5,7 @@ struct ExpandedView: View {
     @EnvironmentObject private var vm: NotchViewModel
     @EnvironmentObject private var network: NetworkMonitor
     @EnvironmentObject private var stats: SystemStats
+    @EnvironmentObject private var prefs: Preferences
 
     var body: some View {
         VStack(spacing: 6) {
@@ -18,11 +19,16 @@ struct ExpandedView: View {
         .padding(.bottom, 14)
         .padding(.top, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: prefs.enabledTabs) { _ in
+            if !prefs.isTabEnabled(vm.activeTab) {
+                vm.activeTab = .home
+            }
+        }
     }
 
     private var header: some View {
         HStack {
-            TimelineView(.periodic(from: .now, by: 30)) { context in
+            TimelineView(.everyMinute) { context in
                 Text(context.date, format: .dateTime.weekday(.wide).day().month())
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.55))
@@ -35,8 +41,11 @@ struct ExpandedView: View {
                 Label(NetworkMonitor.format(network.downloadBps), systemImage: "arrow.down")
                     .labelStyle(CompactStatLabelStyle())
                 if let level = stats.batteryLevel {
-                    Label("%\(level)", systemImage: stats.batteryCharging ? "bolt.fill" : "battery.100")
-                        .labelStyle(CompactStatLabelStyle())
+                    Label(
+                        "%\(level)",
+                        systemImage: stats.batteryCharging ? "bolt.fill" : "battery.100"
+                    )
+                    .labelStyle(CompactStatLabelStyle())
                 }
             }
         }
@@ -72,20 +81,24 @@ struct CompactStatLabelStyle: LabelStyle {
 
 struct TabStrip: View {
     @EnvironmentObject private var vm: NotchViewModel
+    @EnvironmentObject private var prefs: Preferences
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(IslandTab.allCases) { tab in
+            ForEach(prefs.visibleTabs) { tab in
                 Button {
                     vm.activeTab = tab
+                    prefs.performHaptic(.generic)
                 } label: {
                     Image(systemName: tab.symbol)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(vm.activeTab == tab ? .white : .white.opacity(0.45))
+                        .foregroundStyle(
+                            vm.activeTab == tab ? prefs.accentColor : .white.opacity(0.45)
+                        )
                         .frame(width: 34, height: 24)
                         .background(
                             Capsule().fill(
-                                vm.activeTab == tab ? Color.white.opacity(0.14) : .clear
+                                vm.activeTab == tab ? Color.white.opacity(0.12) : .clear
                             )
                         )
                         .contentShape(Capsule())

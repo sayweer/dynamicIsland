@@ -16,6 +16,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/DynamicIsland"
 cp AppBundle/Info.plist "$APP/Contents/Info.plist"
+cp AppBundle/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 echo "▸ Ad-hoc imzalanıyor…"
 codesign --force --sign - "$APP"

@@ -1,90 +1,539 @@
 import SwiftUI
 import ServiceManagement
 
-/// Full settings window (opened from the status-bar menu).
-struct SettingsView: View {
-    @AppStorage(SettingsKeys.hoverToExpand) private var hoverToExpand = true
-    @AppStorage(SettingsKeys.clearShelfOnQuit) private var clearShelfOnQuit = false
-    @EnvironmentObject private var shelf: ShelfManager
-    @EnvironmentObject private var clipboard: ClipboardManager
+// MARK: - Settings window
 
+enum SettingsSection: String, CaseIterable, Identifiable {
+    case general, appearance, modules, data, about
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general: return "Genel"
+        case .appearance: return "Görünüm"
+        case .modules: return "Modüller"
+        case .data: return "Veriler"
+        case .about: return "Hakkında"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .general: return "gearshape.fill"
+        case .appearance: return "paintbrush.fill"
+        case .modules: return "square.grid.2x2.fill"
+        case .data: return "externaldrive.fill"
+        case .about: return "info.circle.fill"
+        }
+    }
+}
+
+/// Modern, sidebar'lı ayarlar penceresi.
+struct SettingsView: View {
+    @EnvironmentObject private var prefs: Preferences
+    @State private var section: SettingsSection = .general
+
+    var body: some View {
+        HStack(spacing: 0) {
+            sidebar
+            Divider()
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(section.title)
+                        .font(.title2.weight(.bold))
+                        .padding(.top, 8)
+                    sectionContent
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(Color(nsColor: .windowBackgroundColor))
+        }
+        .frame(width: 640, height: 480)
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                MiniIslandGlyph()
+                    .frame(width: 34, height: 24)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Dynamic Island")
+                        .font(.headline)
+                    Text("v0.2.0 · Açık Kaynak")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, 28)
+            .padding(.bottom, 14)
+
+            ForEach(SettingsSection.allCases) { item in
+                Button {
+                    section = item
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: item.symbol)
+                            .font(.system(size: 12))
+                            .frame(width: 18)
+                            .foregroundStyle(section == item ? prefs.accentColor : .secondary)
+                        Text(item.title)
+                            .font(.callout.weight(section == item ? .semibold : .regular))
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(section == item ? Color.primary.opacity(0.08) : .clear)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .frame(width: 185)
+        .background(.ultraThinMaterial)
+    }
+
+    @ViewBuilder
+    private var sectionContent: some View {
+        switch section {
+        case .general: GeneralSettings()
+        case .appearance: AppearanceSettings()
+        case .modules: ModuleSettings()
+        case .data: DataSettings()
+        case .about: AboutSettings()
+        }
+    }
+}
+
+// MARK: - Section: Genel
+
+private struct GeneralSettings: View {
+    @EnvironmentObject private var prefs: Preferences
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
 
     var body: some View {
-        Form {
-            Section("Genel") {
-                Toggle("Oturum açıldığında başlat", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { enabled in
-                        do {
-                            if enabled {
-                                try SMAppService.mainApp.register()
-                            } else {
-                                try SMAppService.mainApp.unregister()
-                            }
-                            loginError = nil
-                        } catch {
-                            loginError = error.localizedDescription
-                            launchAtLogin = SMAppService.mainApp.status == .enabled
+        SettingsCard("Başlangıç") {
+            Toggle("Oturum açıldığında başlat", isOn: $launchAtLogin)
+                .onChange(of: launchAtLogin) { enabled in
+                    do {
+                        if enabled {
+                            try SMAppService.mainApp.register()
+                        } else {
+                            try SMAppService.mainApp.unregister()
                         }
+                        loginError = nil
+                    } catch {
+                        loginError = error.localizedDescription
+                        launchAtLogin = SMAppService.mainApp.status == .enabled
                     }
-                if let loginError {
-                    Text(loginError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
                 }
-                Toggle("İmleci çentiğe getirince genişlet", isOn: $hoverToExpand)
-                Text("Kapalıyken çentiğe tıklayarak açabilirsiniz.")
+            if let loginError {
+                Text(loginError)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Section("Raf") {
-                Toggle("Uygulamadan çıkarken rafı temizle", isOn: $clearShelfOnQuit)
-                Button("Rafı Şimdi Temizle (\(shelf.items.count) öğe)") {
-                    shelf.removeAll()
-                }
-            }
-            Section("Pano") {
-                Text("Kopyaladığınız son \(ClipboardManager.maxItems) öğe saklanır. Parola yöneticilerinden gelen gizli içerikler kaydedilmez.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button("Pano Geçmişini Temizle (\(clipboard.items.count) öğe)") {
-                    clipboard.clearAll()
-                }
-            }
-            Section("Hakkında") {
-                LabeledContent("Sürüm", value: "0.1.0")
-                LabeledContent("Lisans", value: "MIT — Açık Kaynak")
-                Text("NotchBox'a ücretsiz, açık kaynak bir alternatif. Müzik kontrolü, dosya rafı, AirDrop, pano geçmişi ve daha fazlası — hepsi çentikte.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.red)
             }
         }
-        .formStyle(.grouped)
-        .frame(width: 480, height: 420)
+
+        SettingsCard("Açılma Davranışı") {
+            Picker("Island nasıl açılsın?", selection: $prefs.hoverToExpand) {
+                Text("İmleçle (hover)").tag(true)
+                Text("Tıklamayla").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            if prefs.hoverToExpand {
+                LabeledSlider(
+                    label: "Açılma gecikmesi",
+                    value: $prefs.hoverDelay,
+                    range: 0...0.6,
+                    format: "%.1f sn"
+                )
+            }
+            LabeledSlider(
+                label: "Kapanma gecikmesi",
+                value: $prefs.collapseDelay,
+                range: 0.1...1.5,
+                format: "%.1f sn"
+            )
+            Text("İmleç adadan ayrıldıktan sonra bu süre kadar açık kalır. ESC ile anında kapatabilirsiniz.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
+        SettingsCard("Geri Bildirim") {
+            Toggle("Haptik geri bildirim (trackpad titreşimi)", isOn: $prefs.hapticsEnabled)
+        }
     }
 }
 
-/// Compact settings shown inside the island itself.
+// MARK: - Section: Görünüm
+
+private struct AppearanceSettings: View {
+    @EnvironmentObject private var prefs: Preferences
+
+    var body: some View {
+        SettingsCard("Önizleme") {
+            HStack {
+                Spacer()
+                CollapsedPreview()
+                Spacer()
+            }
+        }
+
+        SettingsCard("Vurgu Rengi") {
+            HStack(spacing: 10) {
+                ForEach(Preferences.accentPalette) { option in
+                    Button {
+                        prefs.accentHex = option.hex
+                    } label: {
+                        Circle()
+                            .fill(option.color)
+                            .frame(width: 24, height: 24)
+                            .overlay(
+                                Circle()
+                                    .strokeBorder(
+                                        prefs.accentHex == option.hex
+                                            ? Color.primary.opacity(0.8) : .clear,
+                                        lineWidth: 2
+                                    )
+                                    .padding(-3)
+                            )
+                            .overlay {
+                                if prefs.accentHex == option.hex {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(.white)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .help(option.name)
+                }
+                Spacer()
+            }
+            Text("Zamanlayıcı rozetinde, sekmelerde ve ekolayzırda kullanılır.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
+        SettingsCard("Panel Boyutu") {
+            Picker("Boyut", selection: $prefs.islandSizeMode) {
+                ForEach(Preferences.IslandSizeMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+
+        SettingsCard("Kapalı Mod") {
+            Picker("Sol bölge", selection: $prefs.collapsedLeft) {
+                ForEach(Preferences.CollapsedLeftContent.allCases) { option in
+                    Text(option.title).tag(option)
+                }
+            }
+            Picker("Sağ bölge", selection: $prefs.collapsedRight) {
+                ForEach(Preferences.CollapsedRightContent.allCases) { option in
+                    Text(option.title).tag(option)
+                }
+            }
+            Toggle("Müzik çalarken ekolayzır animasyonu", isOn: $prefs.showEqualizer)
+        }
+
+        SettingsCard("Ekran") {
+            Toggle("Çentiği olmayan ekranlarda simüle ada göster", isOn: $prefs.showOnNotchlessScreens)
+            Text("Kapalıysa ada yalnızca çentikli ekranlarda görünür.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Section: Modüller
+
+private struct ModuleSettings: View {
+    @EnvironmentObject private var prefs: Preferences
+
+    var body: some View {
+        SettingsCard("Sekmeler") {
+            Text("Kullanmadığınız modülleri kapatarak adayı sade tutabilirsiniz.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ForEach(IslandTab.allCases) { tab in
+                HStack {
+                    Image(systemName: tab.symbol)
+                        .font(.system(size: 12))
+                        .frame(width: 20)
+                        .foregroundStyle(prefs.isTabEnabled(tab) ? prefs.accentColor : .secondary)
+                    Text(tab.title)
+                    Spacer()
+                    if Preferences.lockedTabs.contains(tab.rawValue) {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                            .help("Bu sekme her zaman açıktır")
+                    } else {
+                        Toggle("", isOn: Binding(
+                            get: { prefs.isTabEnabled(tab) },
+                            set: { prefs.setTab(tab, enabled: $0) }
+                        ))
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .labelsHidden()
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+}
+
+// MARK: - Section: Veriler
+
+private struct DataSettings: View {
+    @EnvironmentObject private var prefs: Preferences
+    @EnvironmentObject private var shelf: ShelfManager
+    @EnvironmentObject private var clipboard: ClipboardManager
+
+    var body: some View {
+        SettingsCard("Pano Geçmişi") {
+            Text("Kopyaladığınız son \(ClipboardManager.maxItems) öğe yerel olarak saklanır. Parola yöneticilerinden gelen gizli içerikler hiç kaydedilmez; veriler Mac'inizden çıkmaz.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("Pano Geçmişini Temizle (\(clipboard.items.count) öğe)") {
+                clipboard.clearAll()
+            }
+        }
+
+        SettingsCard("Raf") {
+            Toggle("Uygulamadan çıkarken rafı temizle", isOn: $prefs.clearShelfOnQuit)
+            Button("Rafı Şimdi Temizle (\(shelf.items.count) öğe)") {
+                shelf.removeAll()
+            }
+        }
+    }
+}
+
+// MARK: - Section: Hakkında
+
+private struct AboutSettings: View {
+    @EnvironmentObject private var prefs: Preferences
+
+    var body: some View {
+        SettingsCard("Dynamic Island for Mac") {
+            HStack(spacing: 12) {
+                MiniIslandGlyph()
+                    .frame(width: 48, height: 34)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sürüm 0.2.0")
+                        .font(.callout.weight(.semibold))
+                    Text("MIT Lisansı · Açık Kaynak")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Text("MacBook çentiğini etkileşimli bir merkeze dönüştüren ücretsiz uygulama: dosya rafı, AirDrop, müzik kontrolü, son 20 öğelik pano geçmişi, pomodoro, takvim, kamera aynası ve daha fazlası. Reklam yok, pop-up yok, abonelik yok.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Shared building blocks
+
+private struct SettingsCard<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title.uppercased())
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .kerning(0.5)
+            content
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.045))
+        )
+    }
+}
+
+private struct LabeledSlider: View {
+    let label: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let format: String
+
+    var body: some View {
+        HStack {
+            Text(label)
+            Slider(value: $value, in: range)
+            Text(String(format: format, value))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 44, alignment: .trailing)
+        }
+    }
+}
+
+/// Ayarlardaki canlı kapalı-mod önizlemesi.
+private struct CollapsedPreview: View {
+    @EnvironmentObject private var prefs: Preferences
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Group {
+                switch prefs.collapsedLeft {
+                case .clock:
+                    Text(Date(), format: .dateTime.hour().minute())
+                case .date:
+                    Text(Date(), format: .dateTime.day().month(.abbreviated))
+                case .hidden:
+                    Color.clear
+                }
+            }
+            .font(.caption.monospacedDigit().weight(.medium))
+            .foregroundStyle(.white.opacity(0.85))
+            .frame(width: 64)
+
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .frame(width: 110, height: 18)
+                .overlay(
+                    Text("çentik")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.white.opacity(0.2))
+                )
+                .padding(.vertical, 3)
+
+            Group {
+                switch prefs.collapsedRight {
+                case .auto:
+                    HStack(spacing: 4) {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.white.opacity(0.85))
+                        if prefs.showEqualizer {
+                            EqualizerBars(playing: true, tint: prefs.accentColor)
+                        }
+                    }
+                case .battery:
+                    Text("%84 🔋").font(.system(size: 10))
+                case .network:
+                    Text("↓ 1.2 MB/s")
+                        .font(.system(size: 8).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.75))
+                case .hidden:
+                    Color.clear
+                }
+            }
+            .frame(width: 64)
+        }
+        .frame(height: 30)
+        .background(
+            NotchShape(bottomRadius: 12).fill(Color.black)
+        )
+        .overlay(
+            NotchShape(bottomRadius: 12)
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+        )
+    }
+}
+
+/// Küçük ada glifi (sidebar ve hakkında bölümü için).
+struct MiniIslandGlyph: View {
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                RoundedRectangle(cornerRadius: geo.size.height * 0.28, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(hex: "#34345A"), Color(hex: "#0C0C14")],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                Capsule()
+                    .fill(Color.black)
+                    .frame(width: geo.size.width * 0.62, height: geo.size.height * 0.34)
+                    .overlay(
+                        HStack(spacing: geo.size.width * 0.04) {
+                            Capsule().frame(width: 1.5, height: geo.size.height * 0.14)
+                            Capsule().frame(width: 1.5, height: geo.size.height * 0.2)
+                            Capsule().frame(width: 1.5, height: geo.size.height * 0.11)
+                        }
+                        .foregroundStyle(Color(hex: "#30D158"))
+                    )
+                    .overlay(
+                        Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5)
+                    )
+            }
+        }
+    }
+}
+
+// MARK: - Quick settings inside the island
+
 struct SettingsQuickView: View {
-    @AppStorage(SettingsKeys.hoverToExpand) private var hoverToExpand = true
-    @AppStorage(SettingsKeys.clearShelfOnQuit) private var clearShelfOnQuit = false
+    @EnvironmentObject private var prefs: Preferences
     @EnvironmentObject private var clipboard: ClipboardManager
     @EnvironmentObject private var shelf: ShelfManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             CardTitle("Hızlı Ayarlar", symbol: "gearshape.fill")
-            Toggle("İmleci çentiğe getirince genişlet", isOn: $hoverToExpand)
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.85))
-            Toggle("Çıkarken rafı temizle", isOn: $clearShelfOnQuit)
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.85))
+            HStack(spacing: 16) {
+                Toggle("İmleçle aç", isOn: $prefs.hoverToExpand)
+                Toggle("Ekolayzır", isOn: $prefs.showEqualizer)
+                Toggle("Haptik", isOn: $prefs.hapticsEnabled)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .font(.caption)
+            .foregroundStyle(.white.opacity(0.85))
+
+            HStack(spacing: 8) {
+                Text("Vurgu:")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.5))
+                ForEach(Preferences.accentPalette) { option in
+                    Button {
+                        prefs.accentHex = option.hex
+                    } label: {
+                        Circle()
+                            .fill(option.color)
+                            .frame(width: 15, height: 15)
+                            .overlay {
+                                if prefs.accentHex == option.hex {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 7, weight: .bold))
+                                        .foregroundStyle(.white)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .help(option.name)
+                }
+            }
+
             Divider().overlay(Color.white.opacity(0.1))
             HStack(spacing: 10) {
                 Button {
@@ -106,7 +555,7 @@ struct SettingsQuickView: View {
             }
             Spacer()
             HStack {
-                Text("DynamicIsland v0.1.0 · MIT · Açık Kaynak")
+                Text("DynamicIsland v0.2.0 · MIT · Açık Kaynak")
                     .font(.system(size: 9))
                     .foregroundStyle(.white.opacity(0.3))
                 Spacer()
@@ -117,7 +566,7 @@ struct SettingsQuickView: View {
                         .font(.caption2)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.blue)
+                .foregroundStyle(prefs.accentColor)
                 Button {
                     NSApp.terminate(nil)
                 } label: {

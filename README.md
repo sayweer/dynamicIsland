@@ -26,7 +26,8 @@ NotchBox gibi ücretli uygulamalara açık kaynak bir alternatif: tüm "Pro" öz
 | 🔢 **Sayaç & Kalan Günler** | Genel amaçlı sayaç + önemli tarihlere geri sayım. |
 | 📊 **Sistem Monitörü** | CPU, RAM, pil; kapalı modda pil yüzdesi, genişlemiş modda ağ hızı. |
 | 🚀 **Uygulama Kısayolları** | Favori uygulamalarınızı çentikten tek tıkla başlatın. |
-| ⚙️ **Sistem Entegrasyonu** | Oturum açılışında başlatma, Dock'ta görünmez (menü çubuğu uygulaması), hover/tıklama ile açılma seçeneği, haptik geri bildirim. |
+| ⚙️ **Sistem Entegrasyonu** | Oturum açılışında başlatma, Dock'ta görünmez (menü çubuğu uygulaması), hover/tıklama ile açılma seçeneği, ESC ile kapatma, haptik geri bildirim. |
+| 🎨 **Kişiselleştirme** | 6 vurgu rengi, 3 panel boyutu, kapalı mod sol/sağ bölge içeriği (saat/tarih/pil/ağ hızı), açılma-kapanma gecikmeleri, ekolayzır ve haptik aç/kapa, kullanılmayan sekmeleri gizleme. |
 
 Çentiği olmayan Mac'lerde (iMac, Mac mini, eski MacBook'lar) üst-ortada **simüle bir ada** çizilir — tüm özellikler aynen çalışır.
 
@@ -58,7 +59,9 @@ Uygulama hiçbir veri toplamaz, ağa yalnızca Spotify albüm kapağı indirmek 
 - **Dosya parkla:** Herhangi bir dosyayı çentiğe sürükleyin — raf otomatik açılır
 - **AirDrop:** Dosyayı Ana Sayfa'daki AirDrop bölgesine bırakın
 - **Pano:** Pano sekmesinde herhangi bir öğeye tıklayın → yeniden kopyalanır
+- **Kapat:** İmleci uzaklaştırın, dışarı tıklayın veya ESC'ye basın
 - **Menü çubuğu:** ✨ simgesinden ayarlar ve çıkış
+- **Ayarlar:** Modern sidebar'lı pencere — Genel / Görünüm / Modüller / Veriler / Hakkında
 
 ## Mimari
 
@@ -68,20 +71,26 @@ Saf Swift + SwiftUI + AppKit, sıfır harici bağımlılık. SwiftPM executable 
 ```
 Sources/DynamicIsland/
 ├── App.swift                  # @main giriş noktası (accessory app)
-├── AppDelegate.swift          # Manager'ların sahibi, status item, global tık monitörü
+├── AppDelegate.swift          # Manager'ların sahibi, status item, ESC + tık monitörleri
 ├── NotchWindow.swift          # Şeffaf, kenarlıksız, her zaman üstte NSPanel
 ├── NotchViewModel.swift       # Genişleme/daraltma durum makinesi
 ├── Managers/                  # Pano, raf, müzik, takvim, kamera, ağ, sistem, zamanlayıcı…
-├── Views/                     # CollapsedView, ExpandedView + 9 sekme
-└── Support/                   # Geometri, kalıcılık, drop yardımcıları
+├── Views/                     # CollapsedView, ExpandedView + 9 sekme + Ayarlar
+└── Support/                   # Preferences, geometri, kalıcılık, drop yardımcıları
 ```
 
 Önemli teknik noktalar:
 
-- Pencere her zaman genişlemiş boyuttadır; tamamen şeffaf pikseller tıklamaları alta geçirir.
+- Pencere kapalıyken adayı saracak kadar küçüktür, yalnızca genişleyince büyür — ekranın
+  geri kalanındaki tıklamaları asla engelleyemez.
 - Çentik geometrisi `NSScreen.auxiliaryTopLeftArea/safeAreaInsets` ile hesaplanır.
 - Müzik, **yalnızca zaten çalışan** uygulamalara Apple Events gönderir (uygulama başlatmaz).
 - Pano izleyici `changeCount` poll eder (0.5 sn); kendi yazdıklarını yeniden yakalamaz.
+
+## Uygulama İkonu
+
+İkon programatik üretilir: `swift scripts/make-icon.swift çıktı.png` 1024px master PNG çizer;
+`sips` + `iconutil` ile `AppBundle/AppIcon.icns` derlenir (depoya dahildir).
 
 ## Lisans
 

@@ -46,7 +46,7 @@ final class NotchViewModel: ObservableObject {
     /// Set while the pointer sits inside the island so we can delay collapse.
     @Published var isMouseInside = false
 
-    let expandedSize = CGSize(width: 700, height: 430)
+    var expandedSize: CGSize { Preferences.shared.islandSizeMode.size }
 
     private var collapseWorkItem: DispatchWorkItem?
 
@@ -59,8 +59,11 @@ final class NotchViewModel: ObservableObject {
     func expand(tab: IslandTab? = nil) {
         collapseWorkItem?.cancel()
         if let tab { activeTab = tab }
+        if !Preferences.shared.isTabEnabled(activeTab) {
+            activeTab = .home
+        }
         guard !isExpanded else { return }
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        Preferences.shared.performHaptic()
         withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
             isExpanded = true
         }

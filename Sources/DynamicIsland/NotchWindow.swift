@@ -1,9 +1,10 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// Borderless, transparent, always-on-top panel anchored to the top-center of the screen.
-/// The window is always sized for the expanded island; fully transparent pixels
-/// pass mouse events through to windows below.
+/// Sized tightly around the collapsed island; grows only while expanded so it can
+/// never block clicks elsewhere on the screen.
 final class NotchPanel: NSPanel {
     init() {
         super.init(
@@ -23,7 +24,6 @@ final class NotchPanel: NSPanel {
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
         animationBehavior = .none
-        registerForDraggedTypes([.fileURL, .string, .tiff, .png, .URL])
     }
 
     override var canBecomeKey: Bool { true }
@@ -34,13 +34,14 @@ final class NotchPanel: NSPanel {
 final class NotchWindowController {
     let panel = NotchPanel()
     private let viewModel: NotchViewModel
+    private var cancellables: Set<AnyCancellable> = []
 
     init(viewModel: NotchViewModel, rootView: some View) {
         self.viewModel = viewModel
         let hosting = NSHostingView(rootView: AnyView(rootView))
         hosting.wantsLayer = true
         panel.contentView = hosting
-        reposition()
+        applyFrame()
         panel.orderFrontRegardless()
 
         NotificationCenter.default.addObserver(
@@ -48,22 +49,58 @@ final class NotchWindowController {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.reposition() }
+            Task { @MainActor in self?.applyFrame() }
         }
+
+        // Grow the window the moment the island expands; shrink it back only after
+        // the collapse animation has finished.
+        viewModel.$isExpanded
+            .removeDuplicates()
+            .sink { [weak self] expanded in
+                guard let self else { return }
+                if expanded {
+                    self.applyFrame()
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                        if !self.viewModel.isExpanded {
+                            self.applyFrame()
+                        }
+                    }
+                }
+            }
+            .store(in: &cancellables)
     }
 
-    func reposition() {
-        guard let screen = ScreenGeometry.targetScreen else { return }
+    func applyFrame() {
+        guard let screen = ScreenGeometry.targetScreen else {
+            panel.orderOut(nil)
+            return
+        }
+        if !screen.hasNotch && !Preferences.shared.showOnNotchlessScreens {
+            panel.orderOut(nil)
+            return
+        }
         viewModel.refreshGeometry()
-        let size = viewModel.expandedSize
-        let width = max(size.width, viewModel.collapsedSize.width) + 60
-        let height = size.height + 40
+
+        let width: CGFloat
+        let height: CGFloat
+        if viewModel.isExpanded {
+            width = viewModel.expandedSize.width + 60
+            height = viewModel.expandedSize.height + 40
+        } else {
+            // Tight fit: island + side content + a small margin for the shadow.
+            width = viewModel.collapsedSize.width + 156 + 32
+            height = viewModel.collapsedSize.height + 26
+        }
         let frame = CGRect(
-            x: screen.frame.midX - width / 2,
+            x: (screen.frame.midX - width / 2).rounded(),
             y: screen.frame.maxY - height,
             width: width,
             height: height
         )
         panel.setFrame(frame, display: true)
+        if !panel.isVisible {
+            panel.orderFrontRegardless()
+        }
     }
 }

@@ -1,9 +1,11 @@
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let viewModel = NotchViewModel()
+    let prefs = Preferences.shared
     let clipboard = ClipboardManager()
     let shelf = ShelfManager()
     let music = MusicManager()
@@ -21,15 +23,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
     private var globalClickMonitor: Any?
+    private var keyMonitor: Any?
+    private var cancellables: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        UserDefaults.standard.register(defaults: [
-            SettingsKeys.hoverToExpand: true,
-            SettingsKeys.clearShelfOnQuit: false,
-        ])
         viewModel.refreshGeometry()
         let root = NotchRootView()
             .environmentObject(viewModel)
+            .environmentObject(prefs)
             .environmentObject(clipboard)
             .environmentObject(shelf)
             .environmentObject(music)
@@ -44,16 +45,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .environmentObject(browser)
         windowController = NotchWindowController(viewModel: viewModel, rootView: root)
         setupStatusItem()
-        setupGlobalClickMonitor()
+        setupEventMonitors()
+        observePreferences()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        if let monitor = globalClickMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
-        if UserDefaults.standard.bool(forKey: SettingsKeys.clearShelfOnQuit) {
+        if let monitor = globalClickMonitor { NSEvent.removeMonitor(monitor) }
+        if let monitor = keyMonitor { NSEvent.removeMonitor(monitor) }
+        if prefs.clearShelfOnQuit {
             shelf.removeAll()
         }
+    }
+
+    private func observePreferences() {
+        // Window geometry depends on these; reapply when they change.
+        prefs.$showOnNotchlessScreens
+            .dropFirst()
+            .sink { [weak self] _ in self?.windowController?.applyFrame() }
+            .store(in: &cancellables)
+        prefs.$islandSizeMode
+            .dropFirst()
+            .sink { [weak self] _ in self?.windowController?.applyFrame() }
+            .store(in: &cancellables)
     }
 
     // MARK: - Status item
@@ -88,16 +101,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func openSettings() {
         if settingsWindow == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 480, height: 420),
-                styleMask: [.titled, .closable, .miniaturizable],
+                contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+                styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Dynamic Island Ayarları"
+            window.title = "Dynamic Island"
+            window.titlebarAppearsTransparent = true
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(
                 rootView: SettingsView()
                     .environmentObject(viewModel)
+                    .environmentObject(prefs)
                     .environmentObject(shelf)
                     .environmentObject(clipboard)
             )
@@ -108,21 +123,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    // MARK: - Collapse when clicking outside
+    // MARK: - Event monitors
 
-    private func setupGlobalClickMonitor() {
+    private func setupEventMonitors() {
+        // Collapse when clicking anywhere outside our windows.
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.viewModel.isExpanded else { return }
-                // Global monitor only fires for clicks outside our own windows.
                 self.viewModel.collapseNow()
             }
+        }
+        // ESC collapses the island.
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.keyCode == 53, self.viewModel.isExpanded else { return event }
+            self.viewModel.collapseNow()
+            return nil
         }
     }
 }
 
+/// Eski sürümden kalan anahtarlar; Preferences ilk açılışta bunlardan taşır.
 enum SettingsKeys {
     static let hoverToExpand = "settings.hoverToExpand"
     static let clearShelfOnQuit = "settings.clearShelfOnQuit"

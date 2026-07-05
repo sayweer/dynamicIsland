@@ -23,6 +23,7 @@ struct HomeView: View {
 
 struct MusicCard: View {
     @EnvironmentObject private var music: MusicManager
+    @EnvironmentObject private var prefs: Preferences
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -93,7 +94,7 @@ struct MusicCard: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.white.opacity(0.12))
                     Capsule()
-                        .fill(Color.white.opacity(0.75))
+                        .fill(prefs.accentColor)
                         .frame(
                             width: playing.duration > 0
                                 ? geo.size.width * min(playing.position / playing.duration, 1)

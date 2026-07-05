@@ -124,7 +124,7 @@ struct CalendarTabView: View {
     private func eventRow(_ event: EKEvent) -> some View {
         HStack(spacing: 7) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(Color(cgColor: event.calendar.cgColor))
+                .fill(eventColor(event))
                 .frame(width: 3, height: 26)
             VStack(alignment: .leading, spacing: 1) {
                 Text(event.title ?? "Etkinlik")
@@ -146,6 +146,14 @@ struct CalendarTabView: View {
             }
             Spacer(minLength: 0)
         }
+    }
+
+    /// `EKEvent.calendar` silinmiş takvimlerde nil dönebilir (IUO) — güvenli okuma.
+    private func eventColor(_ event: EKEvent) -> Color {
+        if let calendar = event.calendar as EKCalendar?, let cgColor = calendar.cgColor {
+            return Color(cgColor: cgColor)
+        }
+        return .red
     }
 
     private func reminderRow(_ reminder: EKReminder) -> some View {
