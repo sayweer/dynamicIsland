@@ -27,6 +27,23 @@ extension NSScreen {
         )
     }
 
+    /// Adanın yatay merkezi: varsa fiziksel çentiğin ortası, yoksa ekran ortası.
+    /// Pencere konumu ve hover bölgeleri aynı merkezi kullanmak zorunda.
+    var notchCenterX: CGFloat {
+        notchRect?.midX ?? frame.midX
+    }
+
+    /// Ekranın üst kenarına yapışık, çentiğe ortalanmış dikdörtgen
+    /// (pencere frame'i ve hover bölgeleri için ortak kalıp).
+    func topAnchoredRect(width: CGFloat, height: CGFloat, topPadding: CGFloat = 0) -> CGRect {
+        CGRect(
+            x: notchCenterX - width / 2,
+            y: frame.maxY - height,
+            width: width,
+            height: height + topPadding
+        )
+    }
+
     /// Size of the collapsed island. Matches the physical notch when present,
     /// otherwise a simulated Dynamic Island pill.
     var islandSize: CGSize {

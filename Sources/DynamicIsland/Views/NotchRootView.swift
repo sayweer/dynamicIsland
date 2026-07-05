@@ -17,18 +17,17 @@ struct IslandView: View {
     @EnvironmentObject private var vm: NotchViewModel
     @EnvironmentObject private var shelf: ShelfManager
     @EnvironmentObject private var prefs: Preferences
-    @State private var hoverWorkItem: DispatchWorkItem?
 
     private var shape: NotchShape {
-        NotchShape(bottomRadius: vm.isExpanded ? 24 : 12)
+        NotchShape(bottomRadius: vm.isExpanded ? prefs.expandedCornerRadius : 12)
     }
 
     private var islandWidth: CGFloat {
-        vm.isExpanded ? vm.expandedSize.width : vm.collapsedSize.width + 156
+        vm.isExpanded ? vm.expandedSize.width : vm.collapsedPillSize.width
     }
 
     private var islandHeight: CGFloat {
-        vm.isExpanded ? vm.expandedSize.height : vm.collapsedSize.height
+        vm.isExpanded ? vm.expandedSize.height : vm.collapsedPillSize.height
     }
 
     var body: some View {
@@ -58,21 +57,8 @@ struct IslandView: View {
             .clipShape(shape)
         }
         .frame(width: islandWidth, height: islandHeight)
+        .background(DebugFrameReporter())
         .contentShape(shape)
-        .onHover { inside in
-            vm.isMouseInside = inside
-            hoverWorkItem?.cancel()
-            if inside {
-                guard prefs.hoverToExpand, !vm.isExpanded else { return }
-                let work = DispatchWorkItem {
-                    if vm.isMouseInside { vm.expand() }
-                }
-                hoverWorkItem = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + prefs.hoverDelay, execute: work)
-            } else {
-                vm.collapse(afterDelay: prefs.collapseDelay)
-            }
-        }
         .onTapGesture {
             vm.expand()
         }
@@ -80,7 +66,7 @@ struct IslandView: View {
             of: [UTType.fileURL, UTType.image, UTType.plainText],
             delegate: IslandDropDelegate(vm: vm, shelf: shelf)
         )
-        .animation(.spring(response: 0.38, dampingFraction: 0.82), value: vm.isExpanded)
+        .animation(prefs.expandSpring, value: vm.isExpanded)
     }
 }
 
@@ -99,6 +85,9 @@ struct IslandDropDelegate: DropDelegate {
     func dropExited(info: DropInfo) {
         MainActor.assumeIsolated {
             vm.isDragHovering = false
+            // Sürükleme sırasında mouseMoved gelmez; imleç adayı sürüklemeyle
+            // terk ettiği için içeride-sayma bayrağını elle düşür.
+            vm.isMouseInside = false
             vm.collapse(afterDelay: 0.8)
         }
     }
@@ -109,6 +98,27 @@ struct IslandDropDelegate: DropDelegate {
             vm.isDragHovering = false
             return shelf.handle(providers: providers)
         }
+    }
+}
+
+/// `--debug-geometry` ile açıldığında adanın pencere içi konumunu stdout'a döker.
+struct DebugFrameReporter: View {
+    static let enabled = ProcessInfo.processInfo.arguments.contains("--debug-geometry")
+
+    var body: some View {
+        if Self.enabled {
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { report(geo) }
+                    .onChange(of: geo.size) { _ in report(geo) }
+            }
+        }
+    }
+
+    private func report(_ geo: GeometryProxy) {
+        let frame = geo.frame(in: .global)
+        print("[geo:island] global=\(frame) midX=\(frame.midX)")
+        fflush(stdout)
     }
 }
 

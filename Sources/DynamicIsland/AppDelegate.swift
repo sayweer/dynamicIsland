@@ -58,15 +58,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func observePreferences() {
-        // Window geometry depends on these; reapply when they change.
-        prefs.$showOnNotchlessScreens
-            .dropFirst()
-            .sink { [weak self] _ in self?.windowController?.applyFrame() }
-            .store(in: &cancellables)
-        prefs.$islandSizeMode
-            .dropFirst()
-            .sink { [weak self] _ in self?.windowController?.applyFrame() }
-            .store(in: &cancellables)
+        // Pencere geometrisi bu tercihlere bağlı. @Published willSet sırasında
+        // yayın yapar; property'nin yeni değeri yazılana dek beklemek için
+        // main queue'ya bir tur atlatıyoruz (yoksa applyFrame eski değeri okur).
+        Publishers.Merge4(
+            prefs.$showOnNotchlessScreens.dropFirst().map { _ in () },
+            prefs.$islandSizeMode.dropFirst().map { _ in () },
+            prefs.$customPanelWidth.dropFirst().map { _ in () },
+            prefs.$customPanelHeight.dropFirst().map { _ in () }
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] in self?.windowController?.applyFrame() }
+        .store(in: &cancellables)
     }
 
     // MARK: - Status item
@@ -109,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.title = "Dynamic Island"
             window.titlebarAppearsTransparent = true
             window.isReleasedWhenClosed = false
+            window.delegate = self
             window.contentView = NSHostingView(
                 rootView: SettingsView()
                     .environmentObject(viewModel)
@@ -141,6 +145,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.viewModel.collapseNow()
             return nil
         }
+    }
+}
+
+extension AppDelegate: NSWindowDelegate {
+    /// Ayarlar penceresi kapanınca içeriğiyle birlikte bırakılır; aksi halde
+    /// gizli penceredeki canlı önizleme timer'ları sonsuza dek çalışmaya devam eder.
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === settingsWindow else { return }
+        settingsWindow = nil
     }
 }
 

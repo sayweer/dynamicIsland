@@ -61,7 +61,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Dynamic Island")
                         .font(.headline)
-                    Text("v0.2.0 · Açık Kaynak")
+                    Text("v\(AppInfo.version) · Açık Kaynak")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -169,6 +169,19 @@ private struct GeneralSettings: View {
                 .foregroundStyle(.secondary)
         }
 
+        SettingsCard("Animasyon") {
+            Picker("Animasyon hızı", selection: $prefs.animationSpeed) {
+                ForEach(Preferences.AnimationSpeed.allCases) { speed in
+                    Text(speed.title).tag(speed)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            Text("Adanın açılıp kapanma yayının temposunu belirler.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
         SettingsCard("Geri Bildirim") {
             Toggle("Haptik geri bildirim (trackpad titreşimi)", isOn: $prefs.hapticsEnabled)
         }
@@ -233,6 +246,34 @@ private struct AppearanceSettings: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+
+            if prefs.islandSizeMode == .custom {
+                LabeledSlider(
+                    label: "Genişlik",
+                    value: $prefs.customPanelWidth,
+                    range: Preferences.panelWidthRange,
+                    format: "%.0f pt",
+                    valueWidth: 52
+                )
+                LabeledSlider(
+                    label: "Yükseklik",
+                    value: $prefs.customPanelHeight,
+                    range: Preferences.panelHeightRange,
+                    format: "%.0f pt",
+                    valueWidth: 52
+                )
+                Text("Panel açıkken sürükleyin, boyut anında uygulanır.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            LabeledSlider(
+                label: "Köşe yuvarlaklığı",
+                value: $prefs.expandedCornerRadius,
+                range: Preferences.cornerRadiusRange,
+                format: "%.0f",
+                valueWidth: 52
+            )
         }
 
         SettingsCard("Kapalı Mod") {
@@ -334,7 +375,7 @@ private struct AboutSettings: View {
                 MiniIslandGlyph()
                     .frame(width: 48, height: 34)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Sürüm 0.2.0")
+                    Text("Sürüm \(AppInfo.version)")
                         .font(.callout.weight(.semibold))
                     Text("MIT Lisansı · Açık Kaynak")
                         .font(.caption)
@@ -381,6 +422,7 @@ private struct LabeledSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     let format: String
+    var valueWidth: CGFloat = 44
 
     var body: some View {
         HStack {
@@ -389,7 +431,7 @@ private struct LabeledSlider: View {
             Text(String(format: format, value))
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
-                .frame(width: 44, alignment: .trailing)
+                .frame(width: valueWidth, alignment: .trailing)
         }
     }
 }
@@ -555,7 +597,7 @@ struct SettingsQuickView: View {
             }
             Spacer()
             HStack {
-                Text("DynamicIsland v0.2.0 · MIT · Açık Kaynak")
+                Text("DynamicIsland v\(AppInfo.version) · MIT · Açık Kaynak")
                     .font(.system(size: 9))
                     .foregroundStyle(.white.opacity(0.3))
                 Spacer()

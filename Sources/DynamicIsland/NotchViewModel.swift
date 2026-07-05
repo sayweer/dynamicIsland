@@ -44,9 +44,17 @@ final class NotchViewModel: ObservableObject {
     @Published var collapsedSize = CGSize(width: 196, height: 32)
 
     /// Set while the pointer sits inside the island so we can delay collapse.
-    @Published var isMouseInside = false
+    /// Hiçbir view okumadığı için yayınlanmaz (her mouse hareketinde
+    /// objectWillChange tetiklememek için düz property).
+    var isMouseInside = false
 
-    var expandedSize: CGSize { Preferences.shared.islandSizeMode.size }
+    var expandedSize: CGSize { Preferences.shared.expandedPanelSize }
+
+    /// Kapalı moddaki görünür pill: çentik + iki yandaki içerik bölgeleri.
+    /// Pencere, çizim ve hover tetikleme bölgesi hep bu boyuttan türetilir.
+    var collapsedPillSize: CGSize {
+        CGSize(width: collapsedSize.width + 156, height: collapsedSize.height)
+    }
 
     private var collapseWorkItem: DispatchWorkItem?
 
@@ -64,7 +72,7 @@ final class NotchViewModel: ObservableObject {
         }
         guard !isExpanded else { return }
         Preferences.shared.performHaptic()
-        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+        withAnimation(Preferences.shared.expandSpring) {
             isExpanded = true
         }
     }
@@ -74,7 +82,7 @@ final class NotchViewModel: ObservableObject {
         guard isExpanded else { return }
         let work = DispatchWorkItem { [weak self] in
             guard let self, !self.isMouseInside, !self.isDragHovering else { return }
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            withAnimation(Preferences.shared.collapseSpring) {
                 self.isExpanded = false
             }
         }
@@ -90,7 +98,7 @@ final class NotchViewModel: ObservableObject {
         collapseWorkItem?.cancel()
         isMouseInside = false
         isDragHovering = false
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+        withAnimation(Preferences.shared.collapseSpring) {
             isExpanded = false
         }
     }
