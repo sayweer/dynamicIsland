@@ -17,7 +17,10 @@ final class NotchPanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
-        level = .statusBar
+        // .statusBar(25) menü çubuğu öğeleriyle aynı katman; +8 (NotchDrop'un
+        // kanıtlanmış değeri) durum öğeleri ve Tahoe tam ekran şeridiyle
+        // z-sırası çekişmesini önler.
+        level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 8)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         isMovable = false
         isMovableByWindowBackground = false
@@ -74,8 +77,6 @@ final class NotchWindowController {
     let panel = NotchPanel()
     private let viewModel: NotchViewModel
     private var cancellables: Set<AnyCancellable> = []
-    private let debugGeometry = ProcessInfo.processInfo.arguments.contains("--debug-geometry")
-
     private let hover: HoverCoordinator
 
     init(viewModel: NotchViewModel, rootView: some View) {
@@ -92,15 +93,6 @@ final class NotchWindowController {
         panel.contentView = hosting
         applyFrame()
         panel.orderFrontRegardless()
-
-        if debugGeometry {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                self?.viewModel.expand()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    self?.logGeometry("expanded-settled")
-                }
-            }
-        }
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -169,26 +161,10 @@ final class NotchWindowController {
         frame.origin.x = frame.origin.x.rounded()
         if panel.frame != frame {
             panel.setFrame(frame, display: true)
+            HoverDiag.log("pencere -> \(NSStringFromRect(frame))")
         }
         if !panel.isVisible {
             panel.orderFrontRegardless()
         }
-        logGeometry(isExpanded ? "expanded" : "collapsed")
-    }
-
-    /// `--debug-geometry` ile açıldığında ekran/çentik/pencere hizasını stdout'a
-    /// ve unified log'a döker (LaunchServices ile başlatılınca stdout kaybolur).
-    private func logGeometry(_ label: String) {
-        guard debugGeometry, let screen = ScreenGeometry.targetScreen else { return }
-        NSLog("[geo] %@ window=%@", label, NSStringFromRect(panel.frame))
-        let aux = "auxLeft=\(screen.auxiliaryTopLeftArea.map(NSStringFromRect) ?? "-") "
-            + "auxRight=\(screen.auxiliaryTopRightArea.map(NSStringFromRect) ?? "-")"
-        print("[geo:\(label)] screen=\(NSStringFromRect(screen.frame)) safeTop=\(screen.safeAreaInsets.top)")
-        print("[geo:\(label)] \(aux) notch=\(screen.notchRect.map(NSStringFromRect) ?? "-")")
-        print("[geo:\(label)] window=\(NSStringFromRect(panel.frame)) windowMidX=\(panel.frame.midX) screenMidX=\(screen.frame.midX)")
-        if let content = panel.contentView {
-            print("[geo:\(label)] contentSafeArea=\(content.safeAreaInsets) contentBounds=\(NSStringFromRect(content.bounds))")
-        }
-        fflush(stdout)
     }
 }

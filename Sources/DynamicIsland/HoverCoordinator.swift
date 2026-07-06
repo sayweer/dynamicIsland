@@ -1,5 +1,49 @@
 import AppKit
 
+/// Hover tanılaması: `pref.debugHover` (defaults) ya da `--debug-hover` ile açılır,
+/// /tmp/dynamicisland-hover.log dosyasına yazar. Amaç: kullanıcının makinesinde,
+/// gerçek kullanım sırasında hangi katmanın (timer kadansı / bölge kararı /
+/// expand yürütmesi / pencere) durduğunu kanıtlamak. Kapalıyken maliyeti sıfıra yakın.
+@MainActor
+enum HoverDiag {
+    static let enabled: Bool =
+        ProcessInfo.processInfo.arguments.contains("--debug-hover")
+        || UserDefaults.standard.bool(forKey: "pref.debugHover")
+
+    private static let handle: FileHandle? = {
+        guard enabled else { return nil }
+        let path = "/tmp/dynamicisland-hover.log"
+        FileManager.default.createFile(atPath: path, contents: nil)
+        return FileHandle(forWritingAtPath: path)
+    }()
+
+    static func log(_ message: String) {
+        guard enabled, let handle else { return }
+        let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
+        let line = String(format: "%.2f [%@] %@\n", Date().timeIntervalSinceReferenceDate, front, message)
+        handle.write(Data(line.utf8))
+    }
+}
+
+/// Poll kuyruğunda yaşayan paylaşımlı durum. `region` ana aktörden yazılır,
+/// poll kuyruğundan okunur (kilitli); diğer alanlara YALNIZCA poll kuyruğu dokunur.
+final class HoverPollState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _region: CGRect = .zero
+
+    /// O anki aktif bölgenin (trigger ya da keep-open) ekran dikdörtgeni.
+    var region: CGRect {
+        get { lock.lock(); defer { lock.unlock() }; return _region }
+        set { lock.lock(); defer { lock.unlock() }; _region = newValue }
+    }
+
+    // Poll kuyruğuna özel sayaçlar (kilitsiz — tek kuyruk).
+    var lastInside = false
+    var tickCount = 0
+    var lastTickAt: CFAbsoluteTime = 0
+    var maxTickGap: Double = 0
+}
+
 /// Ada aç/kapa kararlarını ekran koordinatındaki sabit bölgelerle veren,
 /// histerezisli durum makinesi.
 ///
@@ -11,7 +55,6 @@ import AppKit
 /// imleç durumu asla hızlıca ileri-geri deviremez.
 @MainActor
 final class HoverCoordinator {
-    private static let debug = ProcessInfo.processInfo.arguments.contains("--debug-geometry")
     private let viewModel: NotchViewModel
     private var expandWork: DispatchWorkItem?
     private var collapseWork: DispatchWorkItem?
@@ -19,20 +62,57 @@ final class HoverCoordinator {
     /// dışarıdan içeri GİRİŞ anında planlanır; böylece ESC ile kapattıktan sonra
     /// imleç pill üzerinde dursa bile ada kendiliğinden yeniden açılmaz.
     private var wasInside = false
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
-    private var pollTimer: Timer?
+    // Yalnızca init'te (MainActor) atanır, deinit'te (başka erişim yokken)
+    // serbest bırakılır; nonisolated deinit'ten güvenle erişilir.
+    private nonisolated(unsafe) var globalMonitor: Any?
+    private nonisolated(unsafe) var localMonitor: Any?
+    private var pollTimer: DispatchSourceTimer?
+    private let pollState = HoverPollState()
+    /// Ana kuyruk, uygulama arka plandayken sistem tarafından yavaşlatılabildiği
+    /// için yoklama ANA KUYRUK DIŞINDA döner (Apple forum 125371'deki kanıtlı çözüm).
+    private let pollQueue = DispatchQueue(label: "dynamicisland.hover.poll", qos: .userInteractive)
 
     init(viewModel: NotchViewModel) {
         self.viewModel = viewModel
-        // Ana kaynak: 20 Hz konum yoklaması. İzin, pencere durumu ve başlatma
-        // bağlamından (Terminal / LaunchServices) tamamen bağımsız çalışır.
-        // Tracking area / event monitörleri bazı bağlamlarda olay teslim etmiyor;
-        // yoklama bu yüzden garanti eden temel katmandır.
-        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.update(at: NSEvent.mouseLocation) }
+        // Ana kaynak: 20 Hz konum yoklaması. İzin, pencere durumu, başlatma
+        // bağlamı ve ana döngünün yoğunluğundan bağımsız çalışır.
+        // Sıcak yol yalnızca konum + dikdörtgen testi yapar; ana aktöre
+        // durum değişiminde ya da saniyede bir (güvenlik) uğrar.
+        let state = pollState
+        let timer = DispatchSource.makeTimerSource(flags: .strict, queue: pollQueue)
+        timer.schedule(deadline: .now() + 0.05, repeating: 0.05, leeway: .milliseconds(10))
+        timer.setEventHandler { [weak self, state] in
+            let now = CFAbsoluteTimeGetCurrent()
+            if state.lastTickAt > 0 {
+                state.maxTickGap = max(state.maxTickGap, now - state.lastTickAt)
+            }
+            state.lastTickAt = now
+            state.tickCount += 1
+
+            let point = NSEvent.mouseLocation
+            let inside = state.region.contains(point)
+            let changed = inside != state.lastInside
+            state.lastInside = inside
+
+            if HoverDiag.enabled, state.tickCount % 100 == 0 {
+                // Poll-kuyruğu alanlarını ana aktöre DEĞER olarak taşı; canlı
+                // referans okuması bir sonraki tick'in yazmasıyla yarışırdı.
+                let count = state.tickCount
+                let gap = Int(state.maxTickGap * 1000)
+                state.maxTickGap = 0
+                Task { @MainActor in
+                    HoverDiag.log("hb #\(count) maxGap=\(gap)ms point=\(NSStringFromPoint(point))")
+                }
+            }
+            // Durum değişiminde hemen, değişmese de saniyede bir ana aktörde
+            // yetkili değerlendirme (bölge önbelleği bayatlamışsa düzeltir).
+            // Konum ana aktörde TAZE okunur; kuyruğa alınan bayat bir point
+            // güncel kararı geri sarıp collapse'ı yanlışlıkla iptal edemesin.
+            if changed || state.tickCount % 20 == 0 {
+                Task { @MainActor in self?.update(at: NSEvent.mouseLocation) }
+            }
         }
-        RunLoop.main.add(timer, forMode: .common)
+        timer.resume()
         pollTimer = timer
 
         // Ek tepkisellik: hareket olayları geldiği sürece yoklamayı beklemeden işle.
@@ -43,15 +123,13 @@ final class HoverCoordinator {
             self?.update(at: NSEvent.mouseLocation)
             return event
         }
-        if Self.debug {
-            NSLog("[hover] hazır: poll=0.05s global=%@ local=%@ hoverToExpand=%d delay=%.2f",
-                  globalMonitor != nil ? "ok" : "yok", localMonitor != nil ? "ok" : "yok",
-                  Preferences.shared.hoverToExpand ? 1 : 0, Preferences.shared.hoverDelay)
-        }
+        HoverDiag.log("hazır: poll=0.05s(strict, ayrı kuyruk) global=\(globalMonitor != nil) "
+            + "local=\(localMonitor != nil) hoverToExpand=\(Preferences.shared.hoverToExpand) "
+            + "delay=\(Preferences.shared.hoverDelay)")
     }
 
     deinit {
-        pollTimer?.invalidate()
+        pollTimer?.cancel()
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
     }
@@ -64,13 +142,16 @@ final class HoverCoordinator {
             wasInside = false
             expandWork?.cancel()
             expandWork = nil
+            pollState.region = .zero
             return
         }
-        let inside = activeRegion(on: screen).contains(point)
+        let region = activeRegion(on: screen)
+        pollState.region = region // poll kuyruğunun sıcak yol önbelleği
+        let inside = region.contains(point)
         viewModel.isMouseInside = inside
-        if Self.debug, inside != wasInside {
-            NSLog("[hover] %@ point=%@ expanded=%d",
-                  inside ? "girdi" : "çıktı", NSStringFromPoint(point), viewModel.isExpanded ? 1 : 0)
+        if HoverDiag.enabled, inside != wasInside {
+            HoverDiag.log("\(inside ? "girdi" : "çıktı") point=\(NSStringFromPoint(point)) "
+                + "expanded=\(viewModel.isExpanded)")
         }
         defer { wasInside = inside }
 
@@ -83,6 +164,7 @@ final class HoverCoordinator {
             }
         } else {
             if inside, !wasInside, Preferences.shared.hoverToExpand {
+                HoverDiag.log("expand planlandı (delay=\(Preferences.shared.hoverDelay))")
                 scheduleExpand()
             } else if !inside {
                 expandWork?.cancel()
@@ -121,10 +203,10 @@ final class HoverCoordinator {
                   let screen = ScreenGeometry.targetScreen,
                   self.triggerRect(on: screen).contains(NSEvent.mouseLocation)
             else {
-                if Self.debug { NSLog("[hover] expand iptal (konum/durum değişti)") }
+                HoverDiag.log("expand İPTAL (konum/durum değişti)")
                 return
             }
-            if Self.debug { NSLog("[hover] expand tetiklendi") }
+            HoverDiag.log("expand TETİKLENDİ")
             self.viewModel.expand()
         }
         expandWork = work
@@ -145,6 +227,7 @@ final class HoverCoordinator {
                   let screen = ScreenGeometry.targetScreen,
                   !self.keepOpenRect(on: screen).contains(NSEvent.mouseLocation)
             else { return }
+            HoverDiag.log("collapse tetiklendi")
             self.viewModel.collapseNow()
         }
         collapseWork = work

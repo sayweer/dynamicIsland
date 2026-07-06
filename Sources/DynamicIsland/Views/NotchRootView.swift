@@ -57,7 +57,6 @@ struct IslandView: View {
             .clipShape(shape)
         }
         .frame(width: islandWidth, height: islandHeight)
-        .background(DebugFrameReporter())
         .contentShape(shape)
         .onTapGesture {
             vm.expand()
@@ -98,27 +97,6 @@ struct IslandDropDelegate: DropDelegate {
             vm.isDragHovering = false
             return shelf.handle(providers: providers)
         }
-    }
-}
-
-/// `--debug-geometry` ile açıldığında adanın pencere içi konumunu stdout'a döker.
-struct DebugFrameReporter: View {
-    static let enabled = ProcessInfo.processInfo.arguments.contains("--debug-geometry")
-
-    var body: some View {
-        if Self.enabled {
-            GeometryReader { geo in
-                Color.clear
-                    .onAppear { report(geo) }
-                    .onChange(of: geo.size) { _ in report(geo) }
-            }
-        }
-    }
-
-    private func report(_ geo: GeometryProxy) {
-        let frame = geo.frame(in: .global)
-        print("[geo:island] global=\(frame) midX=\(frame.midX)")
-        fflush(stdout)
     }
 }
 
