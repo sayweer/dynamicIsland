@@ -58,6 +58,9 @@ struct IslandView: View {
         }
         .frame(width: islandWidth, height: islandHeight)
         .contentShape(shape)
+        // Hover, SwiftUI `.onHover` ile DEĞİL (accessory app'te başka uygulama
+        // önplandayken event vermiyor); NotchHostingView'daki .activeAlways
+        // NSTrackingArea ile algılanıyor. Bkz NotchWindow.swift.
         .onTapGesture {
             vm.expand()
         }

@@ -15,7 +15,7 @@ NotchBox gibi ücretli uygulamalara açık kaynak bir alternatif: tüm "Pro" öz
 | 📋 **Pano Geçmişi** | Kopyaladığınız **son 20 öğe** (metin, bağlantı, dosya, görsel) saklanır; tek tıkla yeniden kopyalanır. Parola yöneticilerinden gelen gizli içerik kaydedilmez. |
 | 🗂️ **Dosya Rafı** | Dosyaları çentiğe sürükleyip bırakın, geçici olarak parklansın; gerektiğinde dışarı sürükleyin. Kopyalar App Support'ta tutulur — orijinal taşınsa bile raf çalışır. |
 | 📡 **AirDrop** | Dosyayı çentikteki AirDrop bölgesine bırakın, paylaşım paneli anında açılır. |
-| 🎵 **Müzik** | Apple Music ve Spotify: albüm kapağı, ilerleme çubuğu, önceki/oynat/sonraki, ritim animasyonu. Kapalı moddayken çentiğin yanında mini EQ. |
+| 🎵 **Müzik** | Apple Music ve Spotify (native uygulama **ve** tarayıcı/web player): albüm kapağı, ilerleme çubuğu, önceki/oynat/sonraki, ritim animasyonu. Kapalı moddayken çentiğin yanında mini EQ. |
 | 🍅 **Pomodoro** | Ayarlanabilir odak/mola süreleri, tur sayacı; çalışırken kapalı modda geri sayım görünür. |
 | ⏱️ **Geri Sayım & Kronometre** | Hızlı zamanlayıcılar, bitince ses + haptik geri bildirim. |
 | 📅 **Takvim & Anımsatıcılar** | Önümüzdeki 7 günün etkinlikleri ve bekleyen anımsatıcılar; çentikten tamamlayın. |
@@ -27,7 +27,7 @@ NotchBox gibi ücretli uygulamalara açık kaynak bir alternatif: tüm "Pro" öz
 | 📊 **Sistem Monitörü** | CPU, RAM, pil; kapalı modda pil yüzdesi, genişlemiş modda ağ hızı. |
 | 🚀 **Uygulama Kısayolları** | Favori uygulamalarınızı çentikten tek tıkla başlatın. |
 | ⚙️ **Sistem Entegrasyonu** | Oturum açılışında başlatma, Dock'ta görünmez (menü çubuğu uygulaması), hover/tıklama ile açılma seçeneği, ESC ile kapatma, haptik geri bildirim. |
-| 🎨 **Kişiselleştirme** | 6 vurgu rengi, 3 panel boyutu, kapalı mod sol/sağ bölge içeriği (saat/tarih/pil/ağ hızı), açılma-kapanma gecikmeleri, ekolayzır ve haptik aç/kapa, kullanılmayan sekmeleri gizleme. |
+| 🎨 **Kişiselleştirme** | 6 vurgu rengi, panel boyutu (3 hazır + **özel genişlik/yükseklik**), köşe yuvarlaklığı, animasyon hızı, kapalı mod sol/sağ bölge içeriği (saat/tarih/pil/ağ hızı), açılma-kapanma gecikmeleri, ekolayzır ve haptik aç/kapa, kullanılmayan sekmeleri gizleme. |
 
 Çentiği olmayan Mac'lerde (iMac, Mac mini, eski MacBook'lar) üst-ortada **simüle bir ada** çizilir — tüm özellikler aynen çalışır.
 
@@ -47,7 +47,7 @@ Script `build/DynamicIsland.app` üretir ve başlatır. Kalıcı kullanım için
 
 Özellikler ilk kullanımda ilgili izni ister; tümü isteğe bağlıdır:
 
-- **Otomasyon (Apple Events)** — müzik kontrolü için (Apple Music / Spotify)
+- **Otomasyon (Apple Events)** — müzik için (Apple Music / Spotify; web player kullanıyorsanız Chrome/Safari için de sorulur)
 - **Takvimler & Anımsatıcılar** — takvim sekmesi için
 - **Kamera** — ayna sekmesi için
 
@@ -81,10 +81,13 @@ Sources/DynamicIsland/
 
 Önemli teknik noktalar:
 
-- Pencere kapalıyken adayı saracak kadar küçüktür, yalnızca genişleyince büyür — ekranın
-  geri kalanındaki tıklamaları asla engelleyemez.
+- Pencere her zaman genişlemiş boyuttadır; hit-test yalnızca ada şekliyle sınırlıdır, böylece
+  şeffaf alanlar (menü çubuğu dahil) alttaki pencerelere tıklamayı geçirir.
+- Hover, ekran-koordinatlı global `mouseMoved` monitörüyle algılanır — SwiftUI `.onHover`
+  arka planda çalışan (accessory) bir uygulamaya, başka uygulama önplandayken olay teslim etmez.
 - Çentik geometrisi `NSScreen.auxiliaryTopLeftArea/safeAreaInsets` ile hesaplanır.
-- Müzik, **yalnızca zaten çalışan** uygulamalara Apple Events gönderir (uygulama başlatmaz).
+- Müzik, **yalnızca zaten çalışan** uygulamalara Apple Events gönderir (uygulama başlatmaz);
+  native Spotify yoksa tarayıcıdaki Spotify web player'ı sekme başlığından algılar.
 - Pano izleyici `changeCount` poll eder (0.5 sn); kendi yazdıklarını yeniden yakalamaz.
 
 ## Uygulama İkonu

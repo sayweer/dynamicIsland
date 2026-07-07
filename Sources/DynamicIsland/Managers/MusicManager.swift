@@ -13,6 +13,9 @@ struct NowPlaying: Equatable {
     var isPlaying: Bool
     var duration: Double
     var position: Double
+    /// Tarayıcıdaki (Chrome/Safari) Spotify web player'dan geliyorsa true —
+    /// native uygulama olmadığı için AppleScript kontrolleri (playpause vb.) uygulanmaz.
+    var isWeb = false
 
     var trackKey: String { "\(source.rawValue)|\(title)|\(artist)" }
 }
@@ -30,6 +33,8 @@ final class MusicManager: ObservableObject {
 
     private static let spotifyBundleID = "com.spotify.client"
     private static let musicBundleID = "com.apple.Music"
+    private static let chromeBundleID = "com.google.Chrome"
+    private static let safariBundleID = "com.apple.Safari"
 
     init() {
         let timer = Timer(timeInterval: 1.5, repeats: true) { [weak self] _ in
@@ -47,7 +52,10 @@ final class MusicManager: ObservableObject {
     private func poll() {
         let spotifyRunning = Self.isRunning(Self.spotifyBundleID)
         let musicRunning = Self.isRunning(Self.musicBundleID)
-        guard spotifyRunning || musicRunning else {
+        // Web/PWA Spotify: native Spotify yokken tarayıcıdaki sekmeyi tara.
+        let chromeRunning = !spotifyRunning && Self.isRunning(Self.chromeBundleID)
+        let safariRunning = !spotifyRunning && Self.isRunning(Self.safariBundleID)
+        guard spotifyRunning || musicRunning || chromeRunning || safariRunning else {
             if nowPlaying != nil {
                 nowPlaying = nil
                 artwork = nil
@@ -109,11 +117,15 @@ final class MusicManager: ObservableObject {
                 }
             }
 
+            // Native Spotify yoksa tarayıcıdaki web Spotify'ı dene.
+            var web: NowPlaying?
+            if spotify == nil, chromeRunning || safariRunning {
+                web = Self.webSpotify(chrome: chromeRunning, safari: safariRunning)
+            }
+
             // Prefer whichever player is actively playing; otherwise show any paused track.
-            let chosen: NowPlaying?
-            if let s = spotify, s.isPlaying { chosen = s }
-            else if let m = music, m.isPlaying { chosen = m }
-            else { chosen = spotify ?? music }
+            let candidates = [spotify, music, web].compactMap { $0 }
+            let chosen = candidates.first(where: { $0.isPlaying }) ?? candidates.first
 
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -121,6 +133,47 @@ final class MusicManager: ObservableObject {
                 self.refreshArtworkIfNeeded(for: chosen, spotifyArtURL: spotifyArtURL)
             }
         }
+    }
+
+    // MARK: - Web (tarayıcı) Spotify
+
+    /// Chrome/Safari'de açık `open.spotify.com` sekmesinin başlığından çalan parçayı
+    /// çıkarır. Spotify web player başlığı çalarken "Şarkı • Sanatçı", duraklatınca
+    /// yalnızca "Spotify" olur; ayraç (•) yoksa çalmıyor sayılır.
+    nonisolated private static func webSpotify(chrome: Bool, safari: Bool) -> NowPlaying? {
+        var browsers: [(app: String, titleProperty: String)] = []
+        if chrome { browsers.append(("Google Chrome", "title")) }
+        if safari { browsers.append(("Safari", "name")) }
+        for (app, titleProperty) in browsers {
+            let script = """
+            tell application "\(app)"
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        if (URL of t) contains "open.spotify.com" then return (\(titleProperty) of t)
+                    end repeat
+                end repeat
+            end tell
+            return ""
+            """
+            guard let title = runScript(script)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !title.isEmpty else { continue }
+            if let playing = parseSpotifyWebTitle(title) { return playing }
+        }
+        return nil
+    }
+
+    nonisolated private static func parseSpotifyWebTitle(_ title: String) -> NowPlaying? {
+        // Ayraç bullet (U+2022) etrafında boşluklu. Yoksa (yalnızca "Spotify") çalmıyor.
+        let separator = " • "
+        guard title.contains(separator) else { return nil }
+        let parts = title.components(separatedBy: separator)
+        let track = parts[0].trimmingCharacters(in: .whitespaces)
+        let artist = parts.dropFirst().joined(separator: separator).trimmingCharacters(in: .whitespaces)
+        guard !track.isEmpty else { return nil }
+        return NowPlaying(
+            source: .spotify, title: track, artist: artist,
+            isPlaying: true, duration: 0, position: 0, isWeb: true
+        )
     }
 
     private func refreshArtworkIfNeeded(for playing: NowPlaying?, spotifyArtURL: String?) {
@@ -131,6 +184,12 @@ final class MusicManager: ObservableObject {
         }
         guard playing.trackKey != lastArtworkKey else { return }
         lastArtworkKey = playing.trackKey
+
+        // Web player'dan kapak resmi alınamaz; eski kapağı temizle.
+        if playing.isWeb {
+            artwork = nil
+            return
+        }
 
         switch playing.source {
         case .spotify:
@@ -179,8 +238,11 @@ final class MusicManager: ObservableObject {
     func nextTrack() { control("next track") }
     func previousTrack() { control("previous track") }
 
+    /// Web player'da native uygulama olmadığından kontrol/seek uygulanamaz.
+    var canControl: Bool { nowPlaying?.isWeb == false }
+
     func seek(to position: Double) {
-        guard let playing = nowPlaying else { return }
+        guard let playing = nowPlaying, !playing.isWeb else { return }
         let app = playing.source == .spotify ? "Spotify" : "Music"
         scriptQueue.async {
             _ = Self.runScript("tell application \"\(app)\" to set player position to \(Int(position))")
@@ -189,7 +251,7 @@ final class MusicManager: ObservableObject {
     }
 
     private func control(_ command: String) {
-        guard let playing = nowPlaying else { return }
+        guard let playing = nowPlaying, !playing.isWeb else { return }
         let app = playing.source == .spotify ? "Spotify" : "Music"
         scriptQueue.async { [weak self] in
             _ = Self.runScript("tell application \"\(app)\" to \(command)")
