@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CoreGraphics
 
 struct NowPlaying: Equatable {
     enum Source: String {
@@ -31,10 +32,10 @@ final class MusicManager: ObservableObject {
     private var lastArtworkKey = ""
     private let scriptQueue = DispatchQueue(label: "dynamicisland.music", qos: .utility)
 
-    private static let spotifyBundleID = "com.spotify.client"
-    private static let musicBundleID = "com.apple.Music"
-    private static let chromeBundleID = "com.google.Chrome"
-    private static let safariBundleID = "com.apple.Safari"
+    nonisolated private static let spotifyBundleID = "com.spotify.client"
+    nonisolated private static let musicBundleID = "com.apple.Music"
+    nonisolated private static let chromeBundleID = "com.google.Chrome"
+    nonisolated private static let safariBundleID = "com.apple.Safari"
 
     init() {
         let timer = Timer(timeInterval: 1.5, repeats: true) { [weak self] _ in
@@ -45,7 +46,7 @@ final class MusicManager: ObservableObject {
         poll()
     }
 
-    private static func isRunning(_ bundleID: String) -> Bool {
+    nonisolated private static func isRunning(_ bundleID: String) -> Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
     }
 
@@ -121,6 +122,16 @@ final class MusicManager: ObservableObject {
             var web: NowPlaying?
             if spotify == nil, chromeRunning || safariRunning {
                 web = Self.webSpotify(chrome: chromeRunning, safari: safariRunning)
+                if var w = web {
+                    // Chrome/Safari'de "Allow JavaScript from Apple Events" açıksa gerçek
+                    // pozisyon/süre okunabilir; kapalıysa sessizce 0/0 kalır (bkz. seek/control).
+                    if let raw = Self.runBrowserJS(Self.playbackTimeJS),
+                       let sep = raw.range(of: "|~|") {
+                        w.position = Self.parseTimecode(String(raw[raw.startIndex..<sep.lowerBound])) ?? 0
+                        w.duration = Self.parseTimecode(String(raw[sep.upperBound...])) ?? 0
+                    }
+                    web = w
+                }
             }
 
             // Prefer whichever player is actively playing; otherwise show any paused track.
@@ -234,28 +245,177 @@ final class MusicManager: ObservableObject {
 
     // MARK: - Controls
 
-    func playPause() { control("playpause") }
-    func nextTrack() { control("next track") }
-    func previousTrack() { control("previous track") }
+    private enum Playback {
+        case playPause, next, previous
 
-    /// Web player'da native uygulama olmadığından kontrol/seek uygulanamaz.
-    var canControl: Bool { nowPlaying?.isWeb == false }
-
-    func seek(to position: Double) {
-        guard let playing = nowPlaying, !playing.isWeb else { return }
-        let app = playing.source == .spotify ? "Spotify" : "Music"
-        scriptQueue.async {
-            _ = Self.runScript("tell application \"\(app)\" to set player position to \(Int(position))")
+        var appleScriptCommand: String {
+            switch self {
+            case .playPause: return "playpause"
+            case .next: return "next track"
+            case .previous: return "previous track"
+            }
         }
-        nowPlaying?.position = position
+        /// Spotify web player'daki kontrol düğmesinin data-testid'si.
+        var webTestID: String {
+            switch self {
+            case .playPause: return "control-button-playpause"
+            case .next: return "control-button-skip-forward"
+            case .previous: return "control-button-skip-back"
+            }
+        }
+        /// NX_KEYTYPE_PLAY / NEXT / PREVIOUS — donanım medya tuşlarının ürettiği aynı sistem olayı.
+        var mediaKey: Int32 {
+            switch self {
+            case .playPause: return 16
+            case .next: return 17
+            case .previous: return 18
+            }
+        }
     }
 
-    private func control(_ command: String) {
-        guard let playing = nowPlaying, !playing.isWeb else { return }
+    func playPause() { control(.playPause) }
+    func nextTrack() { control(.next) }
+    func previousTrack() { control(.previous) }
+
+    /// `fraction`: 0...1 — parça süresi boyunca oran. Native oynatıcıda gerçek saniyeye,
+    /// web'de ilerleme çubuğu üzerinde bir tıklamayı simüle etmek için kullanılır.
+    func seek(toFraction fraction: Double) {
+        guard let playing = nowPlaying else { return }
+        let clamped = min(max(fraction, 0), 1)
+        if playing.isWeb {
+            scriptQueue.async { _ = Self.runBrowserJS(Self.seekJS(fraction: clamped)) }
+        } else {
+            let app = playing.source == .spotify ? "Spotify" : "Music"
+            let position = Int(clamped * playing.duration)
+            scriptQueue.async {
+                _ = Self.runScript("tell application \"\(app)\" to set player position to \(position)")
+            }
+        }
+        nowPlaying?.position = clamped * playing.duration
+    }
+
+    private func control(_ playback: Playback) {
+        guard let playing = nowPlaying else { return }
+        if playing.isWeb {
+            scriptQueue.async { [weak self] in
+                // Önce web player'ın kendi düğmesine tıklamayı dene (JS Apple Events'ten kapalıysa
+                // nil döner); olmazsa donanım medya tuşunu simüle et — ikisi de aynı sonucu verir.
+                if Self.runBrowserJS(Self.clickJS(testID: playback.webTestID)) == nil {
+                    Self.postMediaKey(playback.mediaKey)
+                }
+                Task { @MainActor in self?.poll() }
+            }
+            return
+        }
         let app = playing.source == .spotify ? "Spotify" : "Music"
         scriptQueue.async { [weak self] in
-            _ = Self.runScript("tell application \"\(app)\" to \(command)")
+            _ = Self.runScript("tell application \"\(app)\" to \(playback.appleScriptCommand)")
             Task { @MainActor in self?.poll() }
+        }
+    }
+
+    /// Donanım medya tuşuyla aynı sistem olayını (NX_KEYTYPE_*) üretir; hangi uygulamanın
+    /// bunu aldığını macOS kendi "now playing" sahibine göre belirler (fiziksel tuşla aynı davranış).
+    nonisolated private static func postMediaKey(_ key: Int32) {
+        for keyDown in [true, false] {
+            let flags = NSEvent.ModifierFlags(rawValue: keyDown ? 0xa00 : 0xb00)
+            let data1 = (Int(key) << 16) | ((keyDown ? 0xa : 0xb) << 8)
+            guard let event = NSEvent.otherEvent(
+                with: .systemDefined, location: .zero, modifierFlags: flags,
+                timestamp: 0, windowNumber: 0, context: nil,
+                subtype: Int16(8), data1: data1, data2: -1
+            ), let cgEvent = event.cgEvent else { continue }
+            cgEvent.post(tap: CGEventTapLocation.cghidEventTap)
+        }
+    }
+
+    // MARK: - Web (tarayıcı) JavaScript köprüsü
+
+    /// Chrome/Safari'de açık open.spotify.com sekmesinde JS çalıştırır. Bunun için tarayıcıda
+    /// "View > Developer > Allow JavaScript from Apple Events" açık olmalı; kapalıysa (veya
+    /// sekme yoksa) nil döner — çağıran taraf bunu "web JS kullanılamıyor" olarak ele alır.
+    nonisolated private static func runBrowserJS(_ js: String) -> String? {
+        let script = escapeForAppleScript(js)
+        if isRunning(chromeBundleID),
+           let result = runScript(chromeJSScript(script)), result != "no-tab" {
+            return result
+        }
+        if isRunning(safariBundleID),
+           let result = runScript(safariJSScript(script)), result != "no-tab" {
+            return result
+        }
+        return nil
+    }
+
+    nonisolated private static func escapeForAppleScript(_ js: String) -> String {
+        js.replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    nonisolated private static func chromeJSScript(_ escapedJS: String) -> String {
+        """
+        tell application "Google Chrome"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    if (URL of t) contains "open.spotify.com" then
+                        return execute t javascript "\(escapedJS)"
+                    end if
+                end repeat
+            end repeat
+        end tell
+        return "no-tab"
+        """
+    }
+
+    nonisolated private static func safariJSScript(_ escapedJS: String) -> String {
+        """
+        tell application "Safari"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    if (URL of t) contains "open.spotify.com" then
+                        return do JavaScript "\(escapedJS)" in t
+                    end if
+                end repeat
+            end repeat
+        end tell
+        return "no-tab"
+        """
+    }
+
+    nonisolated private static func clickJS(testID: String) -> String {
+        "(function(){var b=document.querySelector('[data-testid=\"\(testID)\"]');" +
+        "if(b){b.click();return 'ok';}return 'missing';})()"
+    }
+
+    /// "pozisyon|~|süre" (ör. "1:23|~|3:45") döndürür.
+    nonisolated private static var playbackTimeJS: String {
+        "(function(){var p=document.querySelector('[data-testid=\"playback-position\"]');" +
+        "var d=document.querySelector('[data-testid=\"playback-duration\"]');" +
+        "return (p?p.textContent:'')+'|~|'+(d?d.textContent:'');})()"
+    }
+
+    /// İlerleme çubuğunun `fraction` (0...1) noktasında gerçek bir tıklamayı simüle eder —
+    /// Spotify'ın ilerleme çubuğu native bir <input> değil, sürüklenebilir bir div olduğundan.
+    nonisolated private static func seekJS(fraction: Double) -> String {
+        "(function(){var bg=document.querySelector('[data-testid=\"progress-bar-background\"]');" +
+        "if(!bg)return 'missing';var r=bg.getBoundingClientRect();" +
+        "var x=r.left+r.width*\(fraction);var y=r.top+r.height/2;" +
+        "var o={bubbles:true,cancelable:true,clientX:x,clientY:y,button:0};" +
+        "bg.dispatchEvent(new PointerEvent('pointerdown',o));" +
+        "bg.dispatchEvent(new MouseEvent('mousedown',o));" +
+        "window.dispatchEvent(new PointerEvent('pointermove',o));" +
+        "window.dispatchEvent(new MouseEvent('mousemove',o));" +
+        "window.dispatchEvent(new PointerEvent('pointerup',o));" +
+        "window.dispatchEvent(new MouseEvent('mouseup',o));" +
+        "bg.dispatchEvent(new MouseEvent('click',o));return 'ok';})()"
+    }
+
+    /// "1:23" veya "1:02:03" biçimindeki metni saniyeye çevirir.
+    nonisolated private static func parseTimecode(_ text: String) -> Double? {
+        let rawParts = text.trimmingCharacters(in: .whitespaces).components(separatedBy: ":")
+        let parts = rawParts.compactMap { Int($0) }
+        guard !parts.isEmpty, parts.count == rawParts.count else { return nil }
+        return parts.reversed().enumerated().reduce(0.0) { total, item in
+            total + Double(item.element) * pow(60, Double(item.offset))
         }
     }
 

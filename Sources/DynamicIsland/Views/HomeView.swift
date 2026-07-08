@@ -24,6 +24,7 @@ struct HomeView: View {
 struct MusicCard: View {
     @EnvironmentObject private var music: MusicManager
     @EnvironmentObject private var prefs: Preferences
+    @State private var dragFraction: Double?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -89,27 +90,43 @@ struct MusicCard: View {
     }
 
     private func progressBar(_ playing: NowPlaying) -> some View {
-        VStack(spacing: 3) {
+        // Web Spotify'da süre yalnızca Chrome/Safari "Allow JavaScript from Apple Events" açıkken
+        // okunabiliyor; duration <= 0 bunun kapalı olduğu anlamına gelir — o durumda çubuğu
+        // yanıltıcı "0:00" yerine devre dışı gösteriyoruz.
+        let canSeek = playing.duration > 0
+        let liveFraction = dragFraction ?? (canSeek ? min(playing.position / playing.duration, 1) : 0)
+        return VStack(spacing: 3) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.white.opacity(0.12))
                     Capsule()
                         .fill(prefs.accentColor)
-                        .frame(
-                            width: playing.duration > 0
-                                ? geo.size.width * min(playing.position / playing.duration, 1)
-                                : 0
-                        )
+                        .frame(width: geo.size.width * liveFraction)
                 }
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard canSeek, geo.size.width > 0 else { return }
+                            dragFraction = min(max(value.location.x / geo.size.width, 0), 1)
+                        }
+                        .onEnded { value in
+                            guard canSeek, geo.size.width > 0 else { return }
+                            music.seek(toFraction: min(max(value.location.x / geo.size.width, 0), 1))
+                            dragFraction = nil
+                        }
+                )
             }
             .frame(height: 3)
-            HStack {
-                Text(TimerCenter.format(playing.position))
-                Spacer()
-                Text(TimerCenter.format(playing.duration))
+            if canSeek {
+                HStack {
+                    Text(TimerCenter.format(playing.position))
+                    Spacer()
+                    Text(TimerCenter.format(playing.duration))
+                }
+                .font(.system(size: 9).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.4))
             }
-            .font(.system(size: 9).monospacedDigit())
-            .foregroundStyle(.white.opacity(0.4))
         }
     }
 
