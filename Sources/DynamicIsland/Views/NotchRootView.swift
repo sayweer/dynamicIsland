@@ -68,7 +68,9 @@ struct IslandView: View {
             of: [UTType.fileURL, UTType.image, UTType.plainText],
             delegate: IslandDropDelegate(vm: vm, shelf: shelf)
         )
-        .animation(prefs.expandSpring, value: vm.isExpanded)
+        // Animasyon VM'de imperatif olarak sürülür: expand → expandSpring,
+        // collapse → collapseSpring. Burada ikinci bir .animation eklemek ikisini
+        // çakıştırıp kapanışı da expandSpring'e zorluyordu (asimetri kaynağı).
     }
 }
 
@@ -90,7 +92,7 @@ struct IslandDropDelegate: DropDelegate {
             // Sürükleme sırasında mouseMoved gelmez; imleç adayı sürüklemeyle
             // terk ettiği için içeride-sayma bayrağını elle düşür.
             vm.isMouseInside = false
-            vm.collapse(afterDelay: 0.8)
+            vm.collapse(afterDelay: Preferences.shared.collapseDelay)
         }
     }
 

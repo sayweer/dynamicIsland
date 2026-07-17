@@ -35,7 +35,7 @@ struct NotesTabView: View {
                         .font(.system(size: 15))
                         .foregroundStyle(.yellow)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(IslandButtonStyle())
             }
             if notes.notes.isEmpty {
                 Text("Aklınızdakini hemen buraya bırakın.")
@@ -54,13 +54,13 @@ struct NotesTabView: View {
                                     .textSelection(.enabled)
                                 Spacer(minLength: 4)
                                 Button {
-                                    notes.removeNote(note)
+                                    withAnimation(Motion.standard) { notes.removeNote(note) }
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .font(.system(size: 10))
                                         .foregroundStyle(.white.opacity(0.3))
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(IslandButtonStyle())
                             }
                             .padding(7)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -68,8 +68,10 @@ struct NotesTabView: View {
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                                     .fill(Color.yellow.opacity(0.08))
                             )
+                            .transition(.opacity)
                         }
                     }
+                    .animation(Motion.standard, value: notes.notes.count)
                 }
             }
         }
@@ -93,7 +95,7 @@ struct NotesTabView: View {
                         .font(.system(size: 15))
                         .foregroundStyle(.blue)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(IslandButtonStyle())
             }
             if notes.bookmarks.isEmpty {
                 Text("Sık kullandığınız bağlantıları kaydedin.")
@@ -115,13 +117,13 @@ struct NotesTabView: View {
                                     .truncationMode(.middle)
                                 Spacer(minLength: 4)
                                 Button {
-                                    notes.removeBookmark(bookmark)
+                                    withAnimation(Motion.standard) { notes.removeBookmark(bookmark) }
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .font(.system(size: 10))
                                         .foregroundStyle(.white.opacity(0.3))
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(IslandButtonStyle())
                             }
                             .padding(7)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -130,6 +132,7 @@ struct NotesTabView: View {
                                     .fill(Color.blue.opacity(0.08))
                             )
                             .contentShape(RoundedRectangle(cornerRadius: 8))
+                            .transition(.opacity)
                             .onTapGesture { notes.open(bookmark) }
                             .contextMenu {
                                 Button("Varsayılan Tarayıcıda Aç") { notes.open(bookmark) }
@@ -142,6 +145,7 @@ struct NotesTabView: View {
                             }
                         }
                     }
+                    .animation(Motion.standard, value: notes.bookmarks.count)
                 }
             }
         }

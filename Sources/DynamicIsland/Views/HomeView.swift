@@ -49,6 +49,9 @@ struct MusicCard: View {
                 }
                 progressBar(playing)
                 controls
+                if playing.isWeb && music.webJSPermissionMissing {
+                    permissionHint
+                }
             } else {
                 VStack(spacing: 8) {
                     Spacer()
@@ -67,6 +70,20 @@ struct MusicCard: View {
             }
         }
         .islandCard()
+    }
+
+    /// Web Spotify çalıyor ama tarayıcıda Apple Events JS izni kapalı: süre/seek
+    /// çalışmaz. Kullanıcıya dürüstçe nedenini ve çözümü söyleriz (gizlemek yerine).
+    private var permissionHint: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "info.circle")
+            Text("Süre ve ileri sarma için tarayıcıda Apple Events JavaScript iznini açın")
+                .lineLimit(2)
+        }
+        .font(.system(size: 8.5))
+        .foregroundStyle(.white.opacity(0.4))
+        .help("Chrome: Görünüm ▸ Geliştirici ▸ \"Apple Events'ten JavaScript'e izin ver\".\n"
+            + "Safari: Geliştir ▸ \"Apple Events'ten JavaScript'e izin ver\".")
     }
 
     @ViewBuilder
@@ -136,20 +153,23 @@ struct MusicCard: View {
             Button { music.previousTrack() } label: {
                 Image(systemName: "backward.fill").font(.system(size: 14))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(IslandButtonStyle())
             .foregroundStyle(.white.opacity(0.8))
+            .accessibilityLabel("Önceki parça")
             Button { music.playPause() } label: {
                 Image(systemName: (music.nowPlaying?.isPlaying ?? false) ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 30))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(IslandButtonStyle())
             .foregroundStyle(.white)
             .padding(.horizontal, 14)
+            .accessibilityLabel((music.nowPlaying?.isPlaying ?? false) ? "Duraklat" : "Oynat")
             Button { music.nextTrack() } label: {
                 Image(systemName: "forward.fill").font(.system(size: 14))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(IslandButtonStyle())
             .foregroundStyle(.white.opacity(0.8))
+            .accessibilityLabel("Sonraki parça")
             Spacer()
         }
     }
@@ -159,13 +179,14 @@ struct MusicCard: View {
 
 struct AirDropZone: View {
     @EnvironmentObject private var shelf: ShelfManager
+    @EnvironmentObject private var prefs: Preferences
     @State private var isTargeted = false
 
     var body: some View {
         VStack(spacing: 6) {
             Image(systemName: "airplayaudio")
                 .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(isTargeted ? Color.blue : .white.opacity(0.7))
+                .foregroundStyle(isTargeted ? prefs.accentColor : .white.opacity(0.7))
             Text("AirDrop")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.55))
@@ -176,15 +197,16 @@ struct AirDropZone: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(isTargeted ? Color.blue.opacity(0.18) : Color.white.opacity(0.06))
+                .fill(isTargeted ? prefs.accentColor.opacity(0.18) : Color.white.opacity(0.06))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(
-                    isTargeted ? Color.blue.opacity(0.7) : Color.white.opacity(0.06),
+                    isTargeted ? prefs.accentColor.opacity(0.7) : Color.white.opacity(0.06),
                     style: StrokeStyle(lineWidth: 1, dash: isTargeted ? [4] : [])
                 )
         )
+        .animation(Motion.quick, value: isTargeted)
         .onDrop(of: [UTType.fileURL], isTargeted: $isTargeted) { providers in
             DropUtilities.loadFileURLs(from: providers) { urls in
                 shelf.airDrop(urls: urls)
@@ -197,6 +219,7 @@ struct AirDropZone: View {
 struct ShelfDropZone: View {
     @EnvironmentObject private var vm: NotchViewModel
     @EnvironmentObject private var shelf: ShelfManager
+    @EnvironmentObject private var prefs: Preferences
     @State private var isTargeted = false
 
     var body: some View {
@@ -204,7 +227,7 @@ struct ShelfDropZone: View {
             if shelf.items.isEmpty {
                 Image(systemName: "tray.and.arrow.down")
                     .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(isTargeted ? Color.orange : .white.opacity(0.7))
+                    .foregroundStyle(isTargeted ? prefs.accentColor : .white.opacity(0.7))
                 Text("Raf")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.55))
@@ -227,15 +250,16 @@ struct ShelfDropZone: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(isTargeted ? Color.orange.opacity(0.15) : Color.white.opacity(0.06))
+                .fill(isTargeted ? prefs.accentColor.opacity(0.15) : Color.white.opacity(0.06))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(
-                    isTargeted ? Color.orange.opacity(0.7) : Color.white.opacity(0.06),
+                    isTargeted ? prefs.accentColor.opacity(0.7) : Color.white.opacity(0.06),
                     style: StrokeStyle(lineWidth: 1, dash: isTargeted ? [4] : [])
                 )
         )
+        .animation(Motion.quick, value: isTargeted)
         .onTapGesture { vm.activeTab = .shelf }
         .onDrop(of: [UTType.fileURL, UTType.image, UTType.plainText], isTargeted: $isTargeted) { providers in
             shelf.handle(providers: providers)
@@ -252,6 +276,11 @@ struct ShortcutsRow: View {
         HStack(spacing: 8) {
             CardTitle("Kısayollar", symbol: "square.grid.2x2")
             Spacer()
+            if shortcuts.shortcuts.isEmpty {
+                Text("Uygulama eklemek için")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.3))
+            }
             ForEach(shortcuts.shortcuts.suffix(7)) { shortcut in
                 Button {
                     shortcuts.launch(shortcut)
@@ -260,7 +289,7 @@ struct ShortcutsRow: View {
                         .resizable()
                         .frame(width: 26, height: 26)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(IslandButtonStyle())
                 .help(shortcut.name)
                 .contextMenu {
                     Button("Kaldır") { shortcuts.remove(shortcut) }
@@ -275,7 +304,7 @@ struct ShortcutsRow: View {
                     .frame(width: 22, height: 22)
                     .background(Circle().fill(Color.white.opacity(0.08)))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(IslandButtonStyle())
             .help("Uygulama ekle")
         }
         .padding(.horizontal, 10)

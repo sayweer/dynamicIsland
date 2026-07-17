@@ -52,9 +52,11 @@ struct ShelfView: View {
                     LazyVGrid(columns: columns, spacing: 10) {
                         ForEach(shelf.items) { item in
                             ShelfItemView(item: item)
+                                .transition(.opacity)
                         }
                     }
                     .padding(.top, 2)
+                    .animation(Motion.standard, value: shelf.items.count)
                 }
             }
         }
@@ -68,6 +70,7 @@ struct ShelfView: View {
 struct ShelfItemView: View {
     @EnvironmentObject private var shelf: ShelfManager
     let item: ShelfItem
+    @State private var hovering = false
 
     var body: some View {
         VStack(spacing: 4) {
@@ -84,8 +87,19 @@ struct ShelfItemView: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.05))
+                .fill(Color.white.opacity(hovering ? 0.1 : 0.05))
         )
+        .overlay(alignment: .topTrailing) {
+            // Hover'da çift-tıkla-aç ipucu (aksi halde keşfedilemez).
+            if hovering {
+                Image(systemName: "arrow.up.forward.app.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(4)
+            }
+        }
+        .onHover { hovering = $0 }
+        .animation(Motion.quick, value: hovering)
         .onDrag {
             NSItemProvider(contentsOf: item.storedURL) ?? NSItemProvider()
         }
@@ -99,6 +113,6 @@ struct ShelfItemView: View {
             Divider()
             Button("Raftan Kaldır") { shelf.remove(item) }
         }
-        .help("Dışarı sürükleyerek istediğiniz yere bırakın")
+        .help("Çift tıkla aç · dışarı sürükleyerek istediğin yere bırak")
     }
 }

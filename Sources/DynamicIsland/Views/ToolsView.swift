@@ -156,6 +156,7 @@ struct WaterCard: View {
             .frame(maxWidth: .infinity)
             ProgressView(value: Double(habits.waterCount), total: Double(max(habits.waterGoal, 1)))
                 .tint(.blue)
+                .animation(Motion.standard, value: habits.waterCount)
             Spacer(minLength: 0)
             HStack {
                 RoundIconButton(symbol: "minus", tint: .gray) { habits.undoWater() }
@@ -243,6 +244,7 @@ struct SystemMonitorCard: View {
             }
             ProgressView(value: min(max(fraction, 0), 1))
                 .tint(tint)
+                .animation(Motion.standard, value: fraction)
         }
     }
 }
@@ -267,23 +269,27 @@ struct DaysLeftCard: View {
                         Text(event.name)
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.85))
-                        Spacer()
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 6)
                         Text(event.date, format: .dateTime.day().month())
                             .font(.system(size: 9))
                             .foregroundStyle(.white.opacity(0.35))
                         Text(event.daysLeft >= 0 ? "\(event.daysLeft) gün" : "geçti")
-                            .font(.caption2.weight(.semibold).monospacedDigit())
+                            // Renk-tek kodlama olmasın: yaklaşan tarih ayrıca kalın yazılır.
+                            .font(.caption2.weight(event.daysLeft <= 3 ? .bold : .semibold).monospacedDigit())
                             .foregroundStyle(event.daysLeft <= 3 ? .pink : .white.opacity(0.7))
                         Button {
-                            habits.removeEvent(event)
+                            withAnimation(Motion.standard) { habits.removeEvent(event) }
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 10))
                                 .foregroundStyle(.white.opacity(0.3))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(IslandButtonStyle())
                     }
                     .padding(.vertical, 2)
+                    .transition(.opacity)
                 }
             }
             HStack(spacing: 6) {
@@ -299,14 +305,16 @@ struct DaysLeftCard: View {
                     .labelsHidden()
                     .colorScheme(.dark)
                 Button {
-                    habits.addEvent(name: newName.isEmpty ? "Etkinlik" : newName, date: newDate)
+                    withAnimation(Motion.standard) {
+                        habits.addEvent(name: newName.isEmpty ? "Etkinlik" : newName, date: newDate)
+                    }
                     newName = ""
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 16))
                         .foregroundStyle(.pink)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(IslandButtonStyle())
             }
         }
         .islandCard()
@@ -327,8 +335,10 @@ struct RoundIconButton: View {
                 .foregroundStyle(.white)
                 .frame(width: 24, height: 24)
                 .background(Circle().fill(tint.opacity(0.55)))
+                .padding(2)                // görsel 24pt kalır, dokunma hedefi ~28pt
+                .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(IslandButtonStyle())
     }
 }
 
@@ -349,18 +359,20 @@ struct MiniStepper: View {
                     Image(systemName: "chevron.up")
                         .font(.system(size: 6, weight: .bold))
                         .foregroundStyle(.white.opacity(0.6))
-                        .frame(width: 14, height: 8)
+                        .frame(width: 16, height: 11)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(IslandButtonStyle())
                 Button {
                     if value > range.lowerBound { value -= 1 }
                 } label: {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 6, weight: .bold))
                         .foregroundStyle(.white.opacity(0.6))
-                        .frame(width: 14, height: 8)
+                        .frame(width: 16, height: 11)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(IslandButtonStyle())
             }
         }
     }

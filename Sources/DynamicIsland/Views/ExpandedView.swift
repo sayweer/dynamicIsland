@@ -14,11 +14,16 @@ struct ExpandedView: View {
             TabStrip()
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .id(vm.activeTab)
+                .transition(.opacity)
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 14)
         .padding(.top, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Tek animasyon kaynağı: sekme değişince hem TabStrip kapsülü kayar
+        // (matchedGeometry) hem içerik crossfade olur.
+        .animation(Motion.standard, value: vm.activeTab)
         .onChange(of: prefs.enabledTabs) { _ in
             if !prefs.isTabEnabled(vm.activeTab) {
                 vm.activeTab = .home
@@ -82,6 +87,7 @@ struct CompactStatLabelStyle: LabelStyle {
 struct TabStrip: View {
     @EnvironmentObject private var vm: NotchViewModel
     @EnvironmentObject private var prefs: Preferences
+    @Namespace private var tabNamespace
 
     var body: some View {
         HStack(spacing: 4) {
@@ -96,15 +102,20 @@ struct TabStrip: View {
                             vm.activeTab == tab ? prefs.accentColor : .white.opacity(0.45)
                         )
                         .frame(width: 34, height: 24)
-                        .background(
-                            Capsule().fill(
-                                vm.activeTab == tab ? Color.white.opacity(0.12) : .clear
-                            )
-                        )
+                        .background {
+                            // Aktif kapsül sekmeler arasında kayar (ani belirme yerine).
+                            if vm.activeTab == tab {
+                                Capsule()
+                                    .fill(Color.white.opacity(0.12))
+                                    .matchedGeometryEffect(id: "activeTab", in: tabNamespace)
+                            }
+                        }
                         .contentShape(Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(IslandButtonStyle())
                 .help(tab.title)
+                .accessibilityLabel(tab.title)
+                .accessibilityAddTraits(vm.activeTab == tab ? [.isSelected, .isButton] : .isButton)
             }
         }
         .padding(3)
