@@ -9,13 +9,20 @@ final class NetworkMonitor: ObservableObject {
     /// Rolling download samples for the mini graph (most recent last).
     @Published private(set) var history: [Double] = []
 
-    private var lastRx: UInt64 = 0
-    private var lastTx: UInt64 = 0
+    private var lastCounters: [String: (rx: UInt32, tx: UInt32)] = [:]
     private var lastSample = Date()
     private var timer: Timer?
+    private var isActive = true
 
     init() {
-        (lastRx, lastTx) = Self.counters()
+        lastCounters = Self.counters()
+        startTimer()
+    }
+
+    deinit { timer?.invalidate() }
+
+    private func startTimer() {
+        timer?.invalidate()
         let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.sample() }
         }
@@ -23,44 +30,68 @@ final class NetworkMonitor: ObservableObject {
         self.timer = timer
     }
 
+    /// Ağ hızı yalnızca görünürken (genişlemiş panel veya kapalı sağ modül "ağ"
+    /// iken) örneklenir; aksi halde timer durur. Boşta CPU'yu düşürür.
+    func setActive(_ active: Bool) {
+        guard active != isActive else { return }
+        isActive = active
+        if active {
+            // Duraklamadan sonra sahte dev artış görünmesin diye baseline'ı sıfırla.
+            lastCounters = Self.counters()
+            lastSample = Date()
+            startTimer()
+        } else {
+            timer?.invalidate()
+            timer = nil
+        }
+    }
+
     private func sample() {
-        let (rx, tx) = Self.counters()
+        let current = Self.counters()
         let elapsed = max(Date().timeIntervalSince(lastSample), 0.1)
-        // Counters are 32-bit and wrap; ignore negative deltas.
-        let rxDelta = rx >= lastRx ? rx - lastRx : 0
-        let txDelta = tx >= lastTx ? tx - lastTx : 0
+        // Arayüz başına delta. Sayaç azaldıysa (32-bit sarma VEYA arayüz sıfırlanması
+        // — uyku/uyanma, sürücü reload) o arayüzün bu tur katkısını 0 say; sıfırlanmayı
+        // sahte ~4GB sıçrama olarak göstermeyiz. Yeni beliren arayüz bir tur atlanır.
+        var rxDelta: UInt64 = 0
+        var txDelta: UInt64 = 0
+        for (name, c) in current {
+            guard let last = lastCounters[name] else { continue }
+            if c.rx >= last.rx { rxDelta += UInt64(c.rx - last.rx) }
+            if c.tx >= last.tx { txDelta += UInt64(c.tx - last.tx) }
+        }
+        lastCounters = current
         downloadBps = Double(rxDelta) / elapsed
         uploadBps = Double(txDelta) / elapsed
-        lastRx = rx
-        lastTx = tx
         lastSample = Date()
 
         history.append(downloadBps)
         if history.count > 30 { history.removeFirst() }
     }
 
-    nonisolated private static func counters() -> (UInt64, UInt64) {
+    /// Aktif (IFF_UP + IFF_RUNNING) `en*` arayüzlerinin bayt sayaçları — arayüz başına.
+    /// Sanal/kapalı arayüzler (bridge, kapalı VPN) hariç tutulur.
+    nonisolated private static func counters() -> [String: (rx: UInt32, tx: UInt32)] {
         var addrs: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&addrs) == 0 else { return (0, 0) }
+        guard getifaddrs(&addrs) == 0 else { return [:] }
         defer { freeifaddrs(addrs) }
 
-        var rx: UInt64 = 0
-        var tx: UInt64 = 0
+        let up = UInt32(IFF_UP), running = UInt32(IFF_RUNNING)
+        var result: [String: (rx: UInt32, tx: UInt32)] = [:]
         var pointer = addrs
         while let current = pointer {
             let ifa = current.pointee
             if let sa = ifa.ifa_addr, sa.pointee.sa_family == UInt8(AF_LINK),
-               let dataPointer = ifa.ifa_data {
+               let dataPointer = ifa.ifa_data,
+               (ifa.ifa_flags & up) != 0, (ifa.ifa_flags & running) != 0 {
                 let name = String(cString: ifa.ifa_name)
                 if name.hasPrefix("en") {
                     let data = dataPointer.assumingMemoryBound(to: if_data.self).pointee
-                    rx &+= UInt64(data.ifi_ibytes)
-                    tx &+= UInt64(data.ifi_obytes)
+                    result[name] = (data.ifi_ibytes, data.ifi_obytes)
                 }
             }
             pointer = ifa.ifa_next
         }
-        return (rx, tx)
+        return result
     }
 
     static func format(_ bps: Double) -> String {

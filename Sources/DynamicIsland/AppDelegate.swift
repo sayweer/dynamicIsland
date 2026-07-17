@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupEventMonitors()
         observePreferences()
+        observeVisibility()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -70,6 +71,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         .receive(on: DispatchQueue.main)
         .sink { [weak self] in self?.windowController?.applyFrame() }
         .store(in: &cancellables)
+    }
+
+    /// Ağ/sistem monitörlerini yalnızca ilgili gösterge görünürken çalıştırır.
+    /// Kapalı panelde CPU/RAM görünmediği için stats yavaşlar, ağ hızı da yalnız
+    /// gerektiğinde örneklenir — boşta CPU tüketimini azaltır.
+    private func observeVisibility() {
+        // Tek kaynak: iki tercihi de taze değerleriyle birlikte okur (kural bir yerde).
+        Publishers.CombineLatest(viewModel.$isExpanded, prefs.$collapsedRight)
+            .sink { [weak self] expanded, right in
+                guard let self else { return }
+                self.stats.setActive(expanded)
+                self.network.setActive(expanded || right == .network)
+            }
+            .store(in: &cancellables)
+        // Panel açıldığında müziği hemen tazele (boşta 6s poll gecikmesini atla).
+        viewModel.$isExpanded
+            .filter { $0 }
+            .sink { [weak self] _ in self?.music.refresh() }
+            .store(in: &cancellables)
     }
 
     // MARK: - Status item
@@ -157,8 +177,7 @@ extension AppDelegate: NSWindowDelegate {
     }
 }
 
-/// Eski sürümden kalan anahtarlar; Preferences ilk açılışta bunlardan taşır.
+/// Eski sürümden kalan anahtar; Preferences ilk açılışta bundan taşır.
 enum SettingsKeys {
-    static let hoverToExpand = "settings.hoverToExpand"
     static let clearShelfOnQuit = "settings.clearShelfOnQuit"
 }

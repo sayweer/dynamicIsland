@@ -60,7 +60,10 @@ final class NotchViewModel: ObservableObject {
 
     func refreshGeometry() {
         if let screen = ScreenGeometry.targetScreen {
-            collapsedSize = screen.islandSize
+            let size = screen.islandSize
+            // Değer aynıysa yayınlama; @Published eşitlik kontrolü yapmadığından
+            // gereksiz objectWillChange ve yeniden çizimleri burada eliyoruz.
+            if size != collapsedSize { collapsedSize = size }
         }
     }
 
@@ -86,10 +89,12 @@ final class NotchViewModel: ObservableObject {
                 self.isExpanded = false
             }
         }
-        collapseWorkItem = work
         if delay <= 0 {
+            // Senkron yolda saklamıyoruz: collapseWorkItem yalnız bekleyen işi tutsun.
+            collapseWorkItem = nil
             work.perform()
         } else {
+            collapseWorkItem = work
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         }
     }

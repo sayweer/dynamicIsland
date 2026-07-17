@@ -1,5 +1,6 @@
 import EventKit
 import Combine
+import os
 
 /// Today's calendar events and open reminders via EventKit.
 @MainActor
@@ -14,6 +15,7 @@ final class CalendarManager: ObservableObject {
     @Published private(set) var openReminders: [EKReminder] = []
 
     private let store = EKEventStore()
+    private let log = Logger(subsystem: "com.opensource.DynamicIsland", category: "Calendar")
 
     init() {
         updateAccessFromSystem()
@@ -107,7 +109,13 @@ final class CalendarManager: ObservableObject {
 
     func complete(_ reminder: EKReminder) {
         reminder.isCompleted = true
-        try? store.save(reminder, commit: true)
-        openReminders.removeAll { $0.calendarItemIdentifier == reminder.calendarItemIdentifier }
+        do {
+            try store.save(reminder, commit: true)
+            openReminders.removeAll { $0.calendarItemIdentifier == reminder.calendarItemIdentifier }
+        } catch {
+            // Kaydetme başarısızsa yerel durumu geri al ki UI ile EventKit ayrışmasın.
+            reminder.isCompleted = false
+            log.error("Hatırlatıcı tamamlanamadı: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }

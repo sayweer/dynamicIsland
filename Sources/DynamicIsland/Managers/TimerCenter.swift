@@ -47,6 +47,8 @@ final class TimerCenter: ObservableObject {
         self.timer = timer
     }
 
+    deinit { timer?.invalidate() }
+
     private func tick() {
         let now = Date()
         let delta = now.timeIntervalSince(lastTick)

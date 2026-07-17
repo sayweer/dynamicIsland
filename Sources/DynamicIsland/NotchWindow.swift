@@ -112,6 +112,16 @@ final class NotchWindowController {
         ) { [weak self] _ in
             Task { @MainActor in self?.applyFrame() }
         }
+
+        // Uyandıktan sonra ekran parametreleri değişmese bile geometriyi tazele
+        // (harici ekran/clamshell senaryolarında ada yanlış konumda kalabiliyordu).
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.applyFrame() }
+        }
     }
 
     deinit {

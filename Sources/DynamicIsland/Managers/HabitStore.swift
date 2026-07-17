@@ -72,6 +72,7 @@ final class HabitStore: ObservableObject {
         let today = Self.todayKey()
         if waterDay != today {
             waterDay = today
+            // waterCount'ın didSet'i persist()'i tetikler ve yeni waterDay'i de yazar.
             waterCount = 0
         }
     }

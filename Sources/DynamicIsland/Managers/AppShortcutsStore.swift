@@ -16,6 +16,9 @@ final class AppShortcutsStore: ObservableObject {
     private var loading = true
 
     init() {
+        // Kayıp path'ler yalnızca GÖRÜNÜMDEN filtrelenir, diske yazılmaz: harici/ağ
+        // biriminde olup henüz bağlanmamış bir uygulama kalıcı silinmesin, birim
+        // bağlanınca geri gelsin.
         let saved = Persistence.load([AppShortcut].self, from: "shortcuts.json") ?? []
         shortcuts = saved.filter { FileManager.default.fileExists(atPath: $0.path) }
         loading = false

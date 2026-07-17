@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import CoreGraphics
+import os
 
 struct NowPlaying: Equatable {
     enum Source: String {
@@ -27,10 +28,29 @@ struct NowPlaying: Equatable {
 final class MusicManager: ObservableObject {
     @Published private(set) var nowPlaying: NowPlaying?
     @Published private(set) var artwork: NSImage?
+    /// Web Spotify çalıyor ama tarayıcıda "Apple Events'ten JavaScript'e izin ver"
+    /// kapalı → süre/ilerleme okunamıyor, seek çalışmıyor. UI kullanıcıyı bilgilendirir.
+    @Published private(set) var webJSPermissionMissing = false
 
     private var timer: Timer?
     private var lastArtworkKey = ""
     private let scriptQueue = DispatchQueue(label: "dynamicisland.music", qos: .utility)
+    private let artworkCache = NSCache<NSString, NSImage>()
+    /// Web Spotify duraklatıldığında (sekme başlığı yalnız "Spotify" olur) son
+    /// bilinen parçayı duraklatılmış göstermek için saklanır.
+    private var lastWebTrack: NowPlaying?
+    // Native seek sonrası, seek'ten ÖNCE başlamış poll'un bayat pozisyonunu yok say.
+    // Zaman yerine kuşak (generation) kullanıyoruz: yavaş AppleScript poll'ları
+    // sabit bir zaman penceresini aşabildiğinden zaman-tabanlı bastırma güvenilmez.
+    private var seekGeneration = 0
+    private var lastSeek: (trackKey: String, position: Double, generation: Int)?
+    nonisolated private static let log = Logger(subsystem: "com.opensource.DynamicIsland", category: "Music")
+
+    /// Bir oynatıcı aktifken hızlı, hiç yokken yavaş yokla. Chrome/Safari açık
+    /// ama Spotify sekmesi yokken AppleScript sekme taramasının maliyetini düşürür.
+    private let activeInterval: TimeInterval = 1.5
+    private let idleInterval: TimeInterval = 6.0
+    private var pollInterval: TimeInterval = 1.5
 
     nonisolated private static let spotifyBundleID = "com.spotify.client"
     nonisolated private static let musicBundleID = "com.apple.Music"
@@ -38,12 +58,31 @@ final class MusicManager: ObservableObject {
     nonisolated private static let safariBundleID = "com.apple.Safari"
 
     init() {
-        let timer = Timer(timeInterval: 1.5, repeats: true) { [weak self] _ in
+        artworkCache.countLimit = 32
+        scheduleTimer(interval: activeInterval)
+        poll()
+    }
+
+    /// Panel açıldığında anında taze durum için dışarıdan tetiklenebilir.
+    func refresh() { poll() }
+
+    deinit { timer?.invalidate() }
+
+    private func scheduleTimer(interval: TimeInterval) {
+        timer?.invalidate()
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.poll() }
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
-        poll()
+        pollInterval = interval
+    }
+
+    /// Yokla aralığını çalan-parça durumuna göre uyarlar (aktif → 1.5s, boşta → 6s).
+    private func applyPollInterval(active: Bool) {
+        let desired = active ? activeInterval : idleInterval
+        guard desired != pollInterval else { return }
+        scheduleTimer(interval: desired)
     }
 
     nonisolated private static func isRunning(_ bundleID: String) -> Bool {
@@ -62,9 +101,14 @@ final class MusicManager: ObservableObject {
                 artwork = nil
                 lastArtworkKey = ""
             }
+            webJSPermissionMissing = false
+            lastWebTrack = nil
+            applyPollInterval(active: false)
             return
         }
 
+        let lastWeb = lastWebTrack
+        let startGen = seekGeneration
         scriptQueue.async { [weak self] in
             var spotify: NowPlaying?
             var music: NowPlaying?
@@ -120,41 +164,81 @@ final class MusicManager: ObservableObject {
 
             // Native Spotify yoksa tarayıcıdaki web Spotify'ı dene.
             var web: NowPlaying?
+            var webJSMissing = false
+            var sawWebTab = false   // bu poll'da bir Spotify sekmesi görüldü mü
             if spotify == nil, chromeRunning || safariRunning {
-                web = Self.webSpotify(chrome: chromeRunning, safari: safariRunning)
-                if var w = web {
-                    // Chrome/Safari'de "Allow JavaScript from Apple Events" açıksa gerçek
-                    // pozisyon/süre okunabilir; kapalıysa sessizce 0/0 kalır (bkz. seek/control).
+                switch Self.webSpotify(chrome: chromeRunning, safari: safariRunning) {
+                case .playing(var w):
+                    sawWebTab = true
+                    // "Allow JavaScript from Apple Events" açıksa gerçek pozisyon/süre okunur;
+                    // kapalıysa runBrowserJS nil döner → izin eksik olarak işaretle.
                     if let raw = Self.runBrowserJS(Self.playbackTimeJS),
                        let sep = raw.range(of: "|~|") {
                         w.position = Self.parseTimecode(String(raw[raw.startIndex..<sep.lowerBound])) ?? 0
                         w.duration = Self.parseTimecode(String(raw[sep.upperBound...])) ?? 0
+                    } else {
+                        webJSMissing = true
                     }
                     web = w
+                case .pausedTabPresent:
+                    // Sekme açık ama duraklatılmış: son bilinen parçayı duraklatılmış göster.
+                    sawWebTab = true
+                    if var last = lastWeb {
+                        last.isPlaying = false
+                        web = last
+                    }
+                case .absent:
+                    break
                 }
             }
 
             // Prefer whichever player is actively playing; otherwise show any paused track.
             let candidates = [spotify, music, web].compactMap { $0 }
             let chosen = candidates.first(where: { $0.isPlaying }) ?? candidates.first
+            let webResult = web
+            let sawWebTabResult = sawWebTab
 
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.nowPlaying = chosen
-                self.refreshArtworkIfNeeded(for: chosen, spotifyArtURL: spotifyArtURL)
+                var final = chosen
+                // Bu poll seek'ten ÖNCE başladıysa (startGen < seek'in kuşağı) raporladığı
+                // pozisyon bayattır; hedefi kullan ki scrubber geri zıplamasın.
+                if let s = self.lastSeek, var f = final, !f.isWeb,
+                   f.trackKey == s.trackKey, startGen < s.generation {
+                    f.position = s.position
+                    final = f
+                }
+                self.nowPlaying = final
+                // Web parça hafızası: çalarken güncelle; Spotify sekmesi hiç görülmediyse
+                // temizle (başka oynatıcı aktifken kapalı sekmenin hayaleti diriltilmesin).
+                if let w = webResult, w.isPlaying {
+                    self.lastWebTrack = w
+                } else if !sawWebTabResult {
+                    self.lastWebTrack = nil
+                }
+                self.webJSPermissionMissing = (final?.isWeb == true) && webJSMissing
+                self.applyPollInterval(active: final != nil)
+                self.refreshArtworkIfNeeded(for: final, spotifyArtURL: spotifyArtURL)
             }
         }
     }
 
     // MARK: - Web (tarayıcı) Spotify
 
-    /// Chrome/Safari'de açık `open.spotify.com` sekmesinin başlığından çalan parçayı
-    /// çıkarır. Spotify web player başlığı çalarken "Şarkı • Sanatçı", duraklatınca
-    /// yalnızca "Spotify" olur; ayraç (•) yoksa çalmıyor sayılır.
-    nonisolated private static func webSpotify(chrome: Bool, safari: Bool) -> NowPlaying? {
+    private enum WebSpotifyState {
+        case playing(NowPlaying)   // "Şarkı • Sanatçı" başlığı → çalıyor
+        case pausedTabPresent      // sekme açık ama başlık yalnız "Spotify" → duraklatılmış
+        case absent                // hiç Spotify sekmesi yok
+    }
+
+    /// Chrome/Safari'de açık `open.spotify.com` sekmesinin başlığından durumu çıkarır.
+    /// Web player başlığı çalarken "Şarkı • Sanatçı", duraklatınca yalnızca "Spotify"
+    /// olur; boş başlık ise o tarayıcıda Spotify sekmesi yok demektir.
+    nonisolated private static func webSpotify(chrome: Bool, safari: Bool) -> WebSpotifyState {
         var browsers: [(app: String, titleProperty: String)] = []
         if chrome { browsers.append(("Google Chrome", "title")) }
         if safari { browsers.append(("Safari", "name")) }
+        var tabPresent = false
         for (app, titleProperty) in browsers {
             let script = """
             tell application "\(app)"
@@ -168,9 +252,11 @@ final class MusicManager: ObservableObject {
             """
             guard let title = runScript(script)?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !title.isEmpty else { continue }
-            if let playing = parseSpotifyWebTitle(title) { return playing }
+            // Boş olmayan başlık → bu tarayıcıda bir Spotify sekmesi mevcut.
+            tabPresent = true
+            if let playing = parseSpotifyWebTitle(title) { return .playing(playing) }
         }
-        return nil
+        return tabPresent ? .pausedTabPresent : .absent
     }
 
     nonisolated private static func parseSpotifyWebTitle(_ title: String) -> NowPlaying? {
@@ -202,19 +288,26 @@ final class MusicManager: ObservableObject {
             return
         }
 
+        let key = playing.trackKey
+        // Aynı parçaya geri dönüldüğünde tekrar indirmemek/çözmemek için önbellek.
+        if let cached = artworkCache.object(forKey: key as NSString) {
+            artwork = cached
+            return
+        }
+
         switch playing.source {
         case .spotify:
             guard let raw = spotifyArtURL, let url = URL(string: raw) else { return }
-            let key = playing.trackKey
             URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
                 guard let data, let image = NSImage(data: data) else { return }
                 Task { @MainActor in
-                    guard let self, self.lastArtworkKey == key else { return }
+                    guard let self else { return }
+                    self.artworkCache.setObject(image, forKey: key as NSString)
+                    guard self.lastArtworkKey == key else { return }
                     self.artwork = image
                 }
             }.resume()
         case .appleMusic:
-            let key = playing.trackKey
             scriptQueue.async { [weak self] in
                 let descriptor = Self.runScriptDescriptor(
                     """
@@ -236,7 +329,9 @@ final class MusicManager: ObservableObject {
                     return
                 }
                 Task { @MainActor in
-                    guard let self, self.lastArtworkKey == key else { return }
+                    guard let self else { return }
+                    self.artworkCache.setObject(image, forKey: key as NSString)
+                    guard self.lastArtworkKey == key else { return }
                     self.artwork = image
                 }
             }
@@ -290,6 +385,11 @@ final class MusicManager: ObservableObject {
             scriptQueue.async {
                 _ = Self.runScript("tell application \"\(app)\" to set player position to \(position)")
             }
+            // Native seek asenkron uygulanır; kuşağı artır ki bu andan ÖNCE başlamış
+            // poll'ların bayat pozisyonu yok sayılsın (seek'ten sonra başlayan poll
+            // gerçek pozisyonu yansıtır ve bastırma kendiliğinden biter).
+            seekGeneration += 1
+            lastSeek = (playing.trackKey, clamped * playing.duration, seekGeneration)
         }
         nowPlaying?.position = clamped * playing.duration
     }
@@ -434,7 +534,12 @@ final class MusicManager: ObservableObject {
         guard let script = NSAppleScript(source: source) else { return nil }
         var error: NSDictionary?
         let descriptor = script.executeAndReturnError(&error)
-        if error != nil { return nil }
+        if let error {
+            // Hata numarası -1743 → otomasyon (Apple Events) izni verilmemiş.
+            // Böylece "izin yok" ile "çalmıyor" ayırt edilebilir; sessizce yutulmuyor.
+            log.error("AppleScript hatası: \(error, privacy: .public)")
+            return nil
+        }
         return descriptor
     }
 }

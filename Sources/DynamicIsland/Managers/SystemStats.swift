@@ -17,18 +17,51 @@ final class SystemStats: ObservableObject {
     private var lastTotal: UInt64 = 0
     private var timer: Timer?
     private var batteryTick = 0
+    /// Panel genişken CPU/RAM 2s'de bir örneklenir; kapalıyken CPU/RAM görünmediği
+    /// için yalnız pil 30s'de bir tazelenir (kapalı görünümdeki gereksiz redraw'ları kaldırır).
+    private var isActive = false
 
     init() {
         (lastIdle, lastTotal) = Self.cpuTicks()
         refreshBattery()
-        let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
+        startTimer()
+    }
+
+    deinit { timer?.invalidate() }
+
+    private func startTimer() {
+        timer?.invalidate()
+        let interval: TimeInterval = isActive ? 2.0 : 30.0
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.sample() }
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
     }
 
+    func setActive(_ active: Bool) {
+        guard active != isActive else { return }
+        isActive = active
+        if active {
+            // Hızlı örneklemeye dönerken CPU baseline'ını tazele.
+            (lastIdle, lastTotal) = Self.cpuTicks()
+            // Bellek/pil anlık okumadır: expand'de saatlerce eski değer göstermemek
+            // için hemen tazele. (CPU delta gerektirdiğinden ilk taze değeri tick verir.)
+            if let used = Self.usedMemoryBytes() {
+                memoryUsedGB = Double(used) / 1_073_741_824
+                memoryUsage = min(memoryUsedGB / max(memoryTotalGB, 0.1), 1)
+            }
+            refreshBattery()
+        }
+        startTimer()
+    }
+
     private func sample() {
+        guard isActive else {
+            // Kapalıyken yalnız pil (timer zaten 30s aralıkta).
+            refreshBattery()
+            return
+        }
         let (idle, total) = Self.cpuTicks()
         let idleDelta = Double(idle >= lastIdle ? idle - lastIdle : 0)
         let totalDelta = Double(total >= lastTotal ? total - lastTotal : 0)
