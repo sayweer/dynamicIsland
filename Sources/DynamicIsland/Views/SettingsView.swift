@@ -56,7 +56,7 @@ struct SettingsView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
-                MiniIslandGlyph()
+                MiniIslandGlyph(tint: prefs.accentColor)
                     .frame(width: 34, height: 24)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Dynamic Island")
@@ -203,37 +203,8 @@ private struct AppearanceSettings: View {
         }
 
         SettingsCard("Vurgu Rengi") {
-            HStack(spacing: 10) {
-                ForEach(Preferences.accentPalette) { option in
-                    Button {
-                        prefs.accentHex = option.hex
-                    } label: {
-                        Circle()
-                            .fill(option.color)
-                            .frame(width: 24, height: 24)
-                            .overlay(
-                                Circle()
-                                    .strokeBorder(
-                                        prefs.accentHex == option.hex
-                                            ? Color.primary.opacity(0.8) : .clear,
-                                        lineWidth: 2
-                                    )
-                                    .padding(-3)
-                            )
-                            .overlay {
-                                if prefs.accentHex == option.hex {
-                                    Image(systemName: "checkmark")
-                                        .font(.system(size: 9, weight: .bold))
-                                        .foregroundStyle(.white)
-                                }
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .help(option.name)
-                }
-                Spacer()
-            }
-            Text("Zamanlayıcı rozetinde, sekmelerde ve ekolayzırda kullanılır.")
+            AccentSwatchRow()
+            Text("Sekmelerde, ekolayzırda, ilerleme çubuğunda ve bırakma bölgelerinde kullanılır.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -277,16 +248,29 @@ private struct AppearanceSettings: View {
         }
 
         SettingsCard("Kapalı Mod") {
-            Picker("Sol bölge", selection: $prefs.collapsedLeft) {
-                ForEach(Preferences.CollapsedLeftContent.allCases) { option in
-                    Text(option.title).tag(option)
+            HStack {
+                Text("Sol bölge").frame(width: 70, alignment: .leading)
+                Picker("Sol bölge", selection: $prefs.collapsedLeft) {
+                    ForEach(Preferences.CollapsedLeftContent.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
-            Picker("Sağ bölge", selection: $prefs.collapsedRight) {
-                ForEach(Preferences.CollapsedRightContent.allCases) { option in
-                    Text(option.title).tag(option)
+            HStack {
+                Text("Sağ bölge").frame(width: 70, alignment: .leading)
+                Picker("Sağ bölge", selection: $prefs.collapsedRight) {
+                    ForEach(Preferences.CollapsedRightContent.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
+            Text("Akıllı: müzik çalarken müzik, aksi halde pil gösterilir.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Toggle("Müzik çalarken ekolayzır animasyonu", isOn: $prefs.showEqualizer)
         }
 
@@ -347,7 +331,18 @@ private struct DataSettings: View {
 
     var body: some View {
         SettingsCard("Pano Geçmişi") {
-            Text("Kopyaladığınız son \(ClipboardManager.maxItems) öğe yerel olarak saklanır. Parola yöneticilerinden gelen gizli içerikler hiç kaydedilmez; veriler Mac'inizden çıkmaz.")
+            HStack {
+                Text("Saklanacak öğe sayısı").frame(maxWidth: .infinity, alignment: .leading)
+                Picker("Saklanacak öğe sayısı", selection: $prefs.clipboardLimit) {
+                    ForEach(Preferences.clipboardLimitOptions, id: \.self) { count in
+                        Text("\(count)").tag(count)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 160)
+            }
+            Text("Kopyaladığınız son \(prefs.clipboardLimit) öğe yerel olarak saklanır. Parola yöneticilerinden gelen gizli içerikler hiç kaydedilmez; veriler Mac'inizden çıkmaz.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button("Pano Geçmişini Temizle (\(clipboard.items.count) öğe)") {
@@ -372,7 +367,7 @@ private struct AboutSettings: View {
     var body: some View {
         SettingsCard("Dynamic Island for Mac") {
             HStack(spacing: 12) {
-                MiniIslandGlyph()
+                MiniIslandGlyph(tint: prefs.accentColor)
                     .frame(width: 48, height: 34)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Sürüm \(AppInfo.version)")
@@ -432,6 +427,53 @@ private struct LabeledSlider: View {
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: valueWidth, alignment: .trailing)
+        }
+    }
+}
+
+/// Palet swatch'ları + serbest ColorPicker — tam ayarlar ve hızlı ayarlarda ortak.
+struct AccentSwatchRow: View {
+    @EnvironmentObject private var prefs: Preferences
+    var swatchSize: CGFloat = 24
+    var showsRing: Bool = true
+
+    var body: some View {
+        HStack(spacing: swatchSize > 18 ? 10 : 8) {
+            ForEach(Preferences.accentPalette) { option in
+                Button {
+                    prefs.accentHex = option.hex
+                } label: {
+                    Circle()
+                        .fill(option.color)
+                        .frame(width: swatchSize, height: swatchSize)
+                        .overlay {
+                            if prefs.accentHex == option.hex {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: swatchSize * 0.38, weight: .bold))
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        .overlay(
+                            Circle().strokeBorder(
+                                showsRing && prefs.accentHex == option.hex
+                                    ? Color.primary.opacity(0.8) : .clear,
+                                lineWidth: 2
+                            )
+                            .padding(-3)
+                        )
+                }
+                .buttonStyle(.plain)
+                .help(option.name)
+            }
+            // Serbest renk seçimi — koyu paneldeki accent tüketicilerine yansır.
+            ColorPicker("", selection: Binding(
+                get: { prefs.accentColor },
+                set: { prefs.accentHex = $0.hexString }
+            ), supportsOpacity: false)
+            .labelsHidden()
+            .frame(width: swatchSize, height: swatchSize)
+            .help("Özel renk")
+            Spacer()
         }
     }
 }
@@ -502,6 +544,8 @@ private struct CollapsedPreview: View {
 
 /// Küçük ada glifi (sidebar ve hakkında bölümü için).
 struct MiniIslandGlyph: View {
+    var tint: Color = Color(hex: "#30D158")
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
@@ -522,7 +566,7 @@ struct MiniIslandGlyph: View {
                             Capsule().frame(width: 1.5, height: geo.size.height * 0.2)
                             Capsule().frame(width: 1.5, height: geo.size.height * 0.11)
                         }
-                        .foregroundStyle(Color(hex: "#30D158"))
+                        .foregroundStyle(tint)
                     )
                     .overlay(
                         Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5)
@@ -556,24 +600,7 @@ struct SettingsQuickView: View {
                 Text("Vurgu:")
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.5))
-                ForEach(Preferences.accentPalette) { option in
-                    Button {
-                        prefs.accentHex = option.hex
-                    } label: {
-                        Circle()
-                            .fill(option.color)
-                            .frame(width: 15, height: 15)
-                            .overlay {
-                                if prefs.accentHex == option.hex {
-                                    Image(systemName: "checkmark")
-                                        .font(.system(size: 7, weight: .bold))
-                                        .foregroundStyle(.white)
-                                }
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .help(option.name)
-                }
+                AccentSwatchRow(swatchSize: 15, showsRing: false)
             }
 
             Divider().overlay(Color.white.opacity(0.1))

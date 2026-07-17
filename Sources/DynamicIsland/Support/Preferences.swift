@@ -31,9 +31,9 @@ final class Preferences: ObservableObject {
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .auto: return "Akıllı (müzik → pil)"
+            case .auto: return "Akıllı"
             case .battery: return "Pil"
-            case .network: return "Ağ hızı"
+            case .network: return "Ağ"
             case .hidden: return "Boş"
             }
         }
@@ -53,8 +53,10 @@ final class Preferences: ObservableObject {
         var size: CGSize {
             switch self {
             case .compact: return CGSize(width: 620, height: 390)
-            case .normal, .custom: return CGSize(width: 700, height: 430)
+            case .normal: return CGSize(width: 700, height: 430)
             case .large: return CGSize(width: 790, height: 500)
+            // .custom'ın gerçek boyutu expandedPanelSize'dan gelir; burası yalnız güvenli geri dönüş.
+            case .custom: return Self.normal.size
             }
         }
     }
@@ -117,7 +119,11 @@ final class Preferences: ObservableObject {
     @Published var hapticsEnabled: Bool { didSet { save(hapticsEnabled, "hapticsEnabled") } }
     @Published var showOnNotchlessScreens: Bool { didSet { save(showOnNotchlessScreens, "showOnNotchlessScreens") } }
     @Published var clearShelfOnQuit: Bool { didSet { save(clearShelfOnQuit, "clearShelfOnQuit") } }
+    @Published var clipboardLimit: Int { didSet { save(clipboardLimit, "clipboardLimit") } }
     @Published var enabledTabs: Set<String> { didSet { save(Array(enabledTabs).joined(separator: ","), "enabledTabs") } }
+
+    /// Pano geçmişinde saklanacak öğe sayısı seçenekleri.
+    static let clipboardLimitOptions = [10, 20, 50]
 
     var accentColor: Color { Color(hex: accentHex) }
 
@@ -138,10 +144,6 @@ final class Preferences: ObservableObject {
     var collapseSpring: Animation {
         .spring(response: collapseResponse, dampingFraction: 0.85)
     }
-    /// Pencere, kapanma yayı görünür biçimde durulduktan sonra küçültülür;
-    /// gecikme yayın response'undan türetilir ki ikisi birbirinden kopamasın.
-    /// 0.85 sönümlü yay ~2×response'ta durulur; 1.9× son kareyi kırpmadan bekler.
-    var windowShrinkDelay: TimeInterval { collapseResponse * 1.9 }
 
     /// Home ve Ayarlar her zaman açık kalır; diğerleri kapatılabilir.
     static let lockedTabs: Set<String> = [IslandTab.home.rawValue, IslandTab.settings.rawValue]
@@ -189,6 +191,8 @@ final class Preferences: ObservableObject {
         showOnNotchlessScreens = defaults.object(forKey: key("showOnNotchlessScreens")) as? Bool ?? true
         clearShelfOnQuit = defaults.object(forKey: key("clearShelfOnQuit")) as? Bool
             ?? defaults.bool(forKey: SettingsKeys.clearShelfOnQuit)
+        let savedLimit = defaults.object(forKey: key("clipboardLimit")) as? Int ?? 20
+        clipboardLimit = Self.clipboardLimitOptions.contains(savedLimit) ? savedLimit : 20
         if let raw = defaults.string(forKey: key("enabledTabs")) {
             enabledTabs = Set(raw.split(separator: ",").map(String.init))
         } else {
@@ -215,17 +219,30 @@ extension Double {
 }
 
 extension Color {
-    /// "#RRGGBB" biçimindeki hex dizgisinden renk üretir.
+    /// "#RRGGBB" biçimindeki hex dizgisinden renk üretir. Geçersiz/eksik hex
+    /// sessizce siyaha düşmesin diye varsayılan accent'e (#30D158) geri döner.
     init(hex: String) {
+        let cleaned = hex
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
         var value: UInt64 = 0
-        let cleaned = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-        Scanner(string: cleaned).scanHexInt64(&value)
+        let valid = cleaned.count == 6 && Scanner(string: cleaned).scanHexInt64(&value)
+        let rgb = valid ? value : 0x30D158
         self.init(
             .sRGB,
-            red: Double((value >> 16) & 0xFF) / 255,
-            green: Double((value >> 8) & 0xFF) / 255,
-            blue: Double(value & 0xFF) / 255,
+            red: Double((rgb >> 16) & 0xFF) / 255,
+            green: Double((rgb >> 8) & 0xFF) / 255,
+            blue: Double(rgb & 0xFF) / 255,
             opacity: 1
         )
+    }
+
+    /// Rengi "#RRGGBB" biçimine çevirir (ColorPicker seçimini accentHex'e yazmak için).
+    var hexString: String {
+        let ns = NSColor(self).usingColorSpace(.sRGB) ?? .black
+        let r = Int((ns.redComponent * 255).rounded())
+        let g = Int((ns.greenComponent * 255).rounded())
+        let b = Int((ns.blueComponent * 255).rounded())
+        return String(format: "#%02X%02X%02X", r, g, b)
     }
 }

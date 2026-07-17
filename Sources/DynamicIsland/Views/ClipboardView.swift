@@ -1,4 +1,5 @@
 import SwiftUI
+import ImageIO
 
 /// Clipboard history: the last 20 copied items, tap any of them to copy again.
 struct ClipboardView: View {
@@ -9,7 +10,7 @@ struct ClipboardView: View {
         VStack(spacing: 8) {
             HStack {
                 CardTitle(
-                    "Pano Geçmişi · \(clipboard.items.count)/\(ClipboardManager.maxItems)",
+                    "Pano Geçmişi · \(clipboard.items.count)/\(clipboard.maxItems)",
                     symbol: "doc.on.clipboard.fill"
                 )
                 Spacer()
@@ -33,7 +34,7 @@ struct ClipboardView: View {
                     Text("Henüz kopyalanan bir şey yok")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.white.opacity(0.5))
-                    Text("Kopyaladığınız son \(ClipboardManager.maxItems) öğe burada saklanır")
+                    Text("Kopyaladığınız son \(clipboard.maxItems) öğe burada saklanır")
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.3))
                     Spacer()
@@ -47,10 +48,12 @@ struct ClipboardView: View {
                                 item: item,
                                 copied: copiedID == item.id,
                                 onCopy: { copy(item) },
-                                onDelete: { clipboard.remove(item) }
+                                onDelete: { withAnimation(Motion.standard) { clipboard.remove(item) } }
                             )
+                            .transition(.opacity)
                         }
                     }
+                    .animation(Motion.standard, value: clipboard.items)
                 }
             }
         }
@@ -74,6 +77,17 @@ private struct ClipboardRow: View {
     let onCopy: () -> Void
     let onDelete: () -> Void
     @State private var hovering = false
+    @State private var thumbnail: NSImage?
+
+    /// Küçük resimler yol başına bir kez yüklenip önbelleğe alınır; her satır
+    /// yeniden çiziminde disk okumayı önler. ~128px'e küçültülür ve sayı sınırlıdır,
+    /// böylece tam çözünürlüklü ekran görüntüleri belleği şişirmez.
+    private static let thumbnailCache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 60
+        return cache
+    }()
+    private static let thumbnailMaxPixel: CGFloat = 128
 
     var body: some View {
         HStack(spacing: 8) {
@@ -133,26 +147,73 @@ private struct ClipboardRow: View {
 
     @ViewBuilder
     private var preview: some View {
+        Group {
+            switch item.kind {
+            case .image:
+                if let thumbnail {
+                    Image(nsImage: thumbnail)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 30, height: 30)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                } else {
+                    iconPreview("photo", tint: .purple)
+                }
+            case .file:
+                if let thumbnail {
+                    Image(nsImage: thumbnail)
+                        .resizable()
+                        .frame(width: 26, height: 26)
+                } else {
+                    iconPreview("doc.fill", tint: .white.opacity(0.6))
+                }
+            case .link:
+                iconPreview("link", tint: .blue)
+            case .text:
+                iconPreview("text.alignleft", tint: .white.opacity(0.6))
+            }
+        }
+        .task(id: item.id) { await loadThumbnail() }
+    }
+
+    private func loadThumbnail() async {
+        guard item.kind == .image || item.kind == .file else { return }
+        let key = item.value as NSString
+        if let cached = Self.thumbnailCache.object(forKey: key) {
+            thumbnail = cached
+            return
+        }
         switch item.kind {
         case .image:
-            if let image = NSImage(contentsOfFile: item.value) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 30, height: 30)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            } else {
-                iconPreview("photo", tint: .purple)
-            }
+            // Görsel verisini main dışında oku (Data Sendable); küçültme main'de
+            // ImageIO ile (tam boyutu decode etmeden thumbnail üretir, hızlıdır).
+            let path = item.value
+            let data = await Task.detached(priority: .utility) {
+                try? Data(contentsOf: URL(fileURLWithPath: path))
+            }.value
+            guard let data, let image = Self.downsampledImage(data: data, maxPixel: Self.thumbnailMaxPixel) else { return }
+            Self.thumbnailCache.setObject(image, forKey: key)
+            thumbnail = image
         case .file:
-            Image(nsImage: NSWorkspace.shared.icon(forFile: item.value))
-                .resizable()
-                .frame(width: 26, height: 26)
-        case .link:
-            iconPreview("link", tint: .blue)
-        case .text:
-            iconPreview("text.alignleft", tint: .white.opacity(0.6))
+            // Dosya ikonu sistem önbelleğinden gelir, ucuz — doğrudan main'de.
+            let image = NSWorkspace.shared.icon(forFile: item.value)
+            Self.thumbnailCache.setObject(image, forKey: key)
+            thumbnail = image
+        default:
+            break
         }
+    }
+
+    /// Görsel verisinden en fazla `maxPixel` kenarlı bir thumbnail üretir (tam boyutu decode etmez).
+    private static func downsampledImage(data: Data, maxPixel: CGFloat) -> NSImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 
     private func iconPreview(_ symbol: String, tint: Color) -> some View {
