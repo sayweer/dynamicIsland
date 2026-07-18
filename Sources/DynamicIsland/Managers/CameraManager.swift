@@ -85,18 +85,22 @@ final class CameraManager: ObservableObject {
     }
 }
 
-/// AppKit-backed preview layer, mirrored like a real mirror.
+/// AppKit-backed preview layer. Defaults mirror the built-in webcam like a real
+/// mirror; the phone monitor overrides these to show the feed un-mirrored and
+/// fully in-frame (no crop).
 struct CameraPreview: NSViewRepresentable {
     let session: AVCaptureSession
+    var videoGravity: AVLayerVideoGravity = .resizeAspectFill
+    var mirrored: Bool = true
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         view.wantsLayer = true
         let layer = AVCaptureVideoPreviewLayer(session: session)
-        layer.videoGravity = .resizeAspectFill
+        layer.videoGravity = videoGravity
         if let connection = layer.connection {
             connection.automaticallyAdjustsVideoMirroring = false
-            connection.isVideoMirrored = true
+            connection.isVideoMirrored = mirrored
         }
         layer.frame = view.bounds
         layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]

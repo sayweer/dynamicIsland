@@ -8,6 +8,7 @@ struct CollapsedView: View {
     @EnvironmentObject private var timers: TimerCenter
     @EnvironmentObject private var stats: SystemStats
     @EnvironmentObject private var network: NetworkMonitor
+    @EnvironmentObject private var phone: PhoneMonitorManager
     @EnvironmentObject private var prefs: Preferences
 
     var body: some View {
@@ -56,6 +57,35 @@ struct CollapsedView: View {
 
     @ViewBuilder
     private var rightZone: some View {
+        // Bağlı bir iPhone varken, kullanıcının sağ bölge tercihini geçici olarak
+        // gölgeleyip "gel, kadrajı gör" göstergesini önceler (timers.collapsedBadge
+        // ile aynı olay-tabanlı öncelik felsefesi).
+        if phone.isDeviceAvailable {
+            phoneMini
+        } else {
+            configuredRightZone
+        }
+    }
+
+    private var phoneMini: some View {
+        Button {
+            vm.expand(tab: .phoneMonitor)
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "iphone")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                Circle()
+                    .fill(prefs.accentColor)
+                    .frame(width: 5, height: 5)
+            }
+        }
+        .buttonStyle(IslandButtonStyle())
+        .help("iPhone monitörünü aç")
+    }
+
+    @ViewBuilder
+    private var configuredRightZone: some View {
         switch prefs.collapsedRight {
         case .auto:
             if let playing = music.nowPlaying, playing.isPlaying {

@@ -29,7 +29,9 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Kamera aynası özelliği, çentikte hızlı görünüş kontrolü için kameranızı kullanır.</string>
+	<string>Kamera aynası ve iPhone monitörü özelliği, çentikte hızlı görünüş kontrolü ve telefon kamerası önizlemesi için kameranızı kullanır.</string>
+	<key>NSCameraUseContinuityCameraDeviceType</key>
+	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Apple Music ve Spotify'daki çalan parçayı görüntülemek ve kontrol etmek için kullanılır.</string>
 	<key>NSCalendarsUsageDescription</key>

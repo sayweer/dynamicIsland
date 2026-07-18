@@ -199,6 +199,13 @@ final class Preferences: ObservableObject {
             enabledTabs = Set(IslandTab.allCases.map(\.rawValue))
         }
         loading = false
+
+        // Yeni eklenen iPhone monitör sekmesini mevcut kurulumlarda bir kez açık
+        // getir (yoksa kayıtlı enabledTabs onu içermediğinden gizli kalırdı).
+        if !defaults.bool(forKey: key("seededPhoneMonitor")) {
+            defaults.set(true, forKey: key("seededPhoneMonitor"))
+            enabledTabs.insert(IslandTab.phoneMonitor.rawValue)
+        }
     }
 
     private func save(_ value: Any, _ name: String) {
