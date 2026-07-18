@@ -33,6 +33,7 @@ final class ClipboardManager: ObservableObject {
     private var lastChangeCount: Int
     private var timer: Timer?
     private var limitObserver: AnyCancellable?
+    private var tabObserver: AnyCancellable?
     private let imagesDir = Persistence.directory("ClipboardImages")
 
     /// Parola yöneticileri / geçici kaynaklar tarafından işaretlenen, geçmişe
@@ -48,11 +49,14 @@ final class ClipboardManager: ObservableObject {
     init() {
         lastChangeCount = pasteboard.changeCount
         items = Persistence.load([ClipboardItem].self, from: "clipboard.json") ?? []
-        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.poll() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
+
+        // Gizlilik: pano izleme yalnızca Pano modülü açıkken çalışır. Modül
+        // kapatıldığında arka planda kopyalananlar ne yakalanır ne diske yazılır.
+        // ($enabledTabs abonelikte mevcut değeri hemen yayınlar → ilk kurulum da buradan.)
+        tabObserver = Preferences.shared.$enabledTabs
+            .map { $0.contains(IslandTab.clipboard.rawValue) }
+            .removeDuplicates()
+            .sink { [weak self] enabled in self?.setMonitoring(enabled) }
 
         // Limit ayardan düşürülünce fazlalığı hemen kırp.
         limitObserver = Preferences.shared.$clipboardLimit
@@ -61,6 +65,22 @@ final class ClipboardManager: ObservableObject {
     }
 
     deinit { timer?.invalidate() }
+
+    private func setMonitoring(_ enabled: Bool) {
+        if enabled {
+            guard timer == nil else { return }
+            // Modül kapalıyken kopyalananlar geriye dönük yakalanmasın.
+            lastChangeCount = pasteboard.changeCount
+            let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.poll() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            self.timer = timer
+        } else {
+            timer?.invalidate()
+            timer = nil
+        }
+    }
 
     private func trim(to limit: Int) {
         guard items.count > limit else { return }
@@ -136,16 +156,19 @@ final class ClipboardManager: ObservableObject {
     // MARK: - Actions
 
     func copyToPasteboard(_ item: ClipboardItem) {
-        pasteboard.clearContents()
         switch item.kind {
         case .text, .link:
+            pasteboard.clearContents()
             pasteboard.setString(item.value, forType: .string)
         case .file:
+            pasteboard.clearContents()
             pasteboard.writeObjects([URL(fileURLWithPath: item.value) as NSURL])
         case .image:
-            if let image = NSImage(contentsOfFile: item.value) {
-                pasteboard.writeObjects([image])
-            }
+            // Önce oku, sonra temizle: dosya okunamazsa kullanıcının mevcut
+            // panosu sebepsiz yere boşaltılmasın.
+            guard let image = NSImage(contentsOfFile: item.value) else { return }
+            pasteboard.clearContents()
+            pasteboard.writeObjects([image])
         }
         // Our own write bumps changeCount; swallow it so the item isn't re-captured,
         // but move it to the front like a fresh copy.

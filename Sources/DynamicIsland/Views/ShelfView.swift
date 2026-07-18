@@ -17,19 +17,15 @@ struct ShelfView: View {
                     Button {
                         shelf.airDropAll()
                     } label: {
-                        Label("Tümünü AirDrop'la", systemImage: "airplayaudio")
+                        Label("Tümünü AirDrop'la", systemImage: "dot.radiowaves.left.and.right")
                             .font(.caption2)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.blue)
-                    Button {
+                    // Raf kopyaları tek nüsha olabilir — onaysız toplu silme veri kaybettirir.
+                    ConfirmingButton(title: "Temizle", systemImage: "trash") {
                         shelf.removeAll()
-                    } label: {
-                        Label("Temizle", systemImage: "trash")
-                            .font(.caption2)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.white.opacity(0.5))
                 }
             }
             if shelf.items.isEmpty {

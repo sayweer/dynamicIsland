@@ -10,14 +10,16 @@ struct CameraTabView: View {
                 cameraMessage(
                     symbol: "video.slash.fill",
                     title: "Kamera erişimi reddedildi",
-                    detail: "Sistem Ayarları → Gizlilik ve Güvenlik → Kamera bölümünden izin verebilirsiniz"
-                )
+                    detail: "Gizlilik ve Güvenlik → Kamera bölümünden izin verebilirsiniz",
+                    actionTitle: "Sistem Ayarları'nı Aç"
+                ) { SystemSettingsPane.camera.open() }
             } else if camera.unavailable {
                 cameraMessage(
                     symbol: "web.camera",
                     title: "Kamera bulunamadı",
-                    detail: "Bağlı bir kamera cihazı algılanamadı"
-                )
+                    detail: "Bağlı bir kamera cihazı algılanamadı",
+                    actionTitle: "Yeniden Dene"
+                ) { camera.start() }
             } else {
                 CameraPreview(session: camera.session)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -37,7 +39,13 @@ struct CameraTabView: View {
         .onDisappear { camera.stop() }
     }
 
-    private func cameraMessage(symbol: String, title: String, detail: String) -> some View {
+    private func cameraMessage(
+        symbol: String,
+        title: String,
+        detail: String,
+        actionTitle: String? = nil,
+        action: (() -> Void)? = nil
+    ) -> some View {
         VStack(spacing: 8) {
             Spacer()
             Image(systemName: symbol)
@@ -50,6 +58,11 @@ struct CameraTabView: View {
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.35))
                 .multilineTextAlignment(.center)
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            }
             Spacer()
         }
         .frame(maxWidth: .infinity)

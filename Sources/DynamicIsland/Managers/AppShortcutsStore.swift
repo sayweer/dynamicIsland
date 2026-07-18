@@ -13,13 +13,15 @@ struct AppShortcut: Identifiable, Codable, Equatable {
 final class AppShortcutsStore: ObservableObject {
     @Published var shortcuts: [AppShortcut] = [] { didSet { persist() } }
 
+    /// Dosyası şu an erişilemeyen (ör. bağlı olmayan harici/ağ birimi) kısayollar:
+    /// görünümden gizlenir ama her persist'te diske geri yazılır — böylece birim
+    /// yeniden bağlanınca sonraki açılışta geri gelirler, kalıcı silinmezler.
+    private var offlineShortcuts: [AppShortcut] = []
     private var loading = true
 
     init() {
-        // Kayıp path'ler yalnızca GÖRÜNÜMDEN filtrelenir, diske yazılmaz: harici/ağ
-        // biriminde olup henüz bağlanmamış bir uygulama kalıcı silinmesin, birim
-        // bağlanınca geri gelsin.
         let saved = Persistence.load([AppShortcut].self, from: "shortcuts.json") ?? []
+        offlineShortcuts = saved.filter { !FileManager.default.fileExists(atPath: $0.path) }
         shortcuts = saved.filter { FileManager.default.fileExists(atPath: $0.path) }
         loading = false
     }
@@ -50,7 +52,8 @@ final class AppShortcutsStore: ObservableObject {
 
     func add(url: URL) {
         let path = url.path
-        guard !shortcuts.contains(where: { $0.path == path }) else { return }
+        guard !shortcuts.contains(where: { $0.path == path }),
+              !offlineShortcuts.contains(where: { $0.path == path }) else { return }
         let name = url.deletingPathExtension().lastPathComponent
         shortcuts.append(AppShortcut(id: UUID(), name: name, path: path))
     }
@@ -61,6 +64,6 @@ final class AppShortcutsStore: ObservableObject {
 
     private func persist() {
         guard !loading else { return }
-        Persistence.save(shortcuts, to: "shortcuts.json")
+        Persistence.save(shortcuts + offlineShortcuts, to: "shortcuts.json")
     }
 }

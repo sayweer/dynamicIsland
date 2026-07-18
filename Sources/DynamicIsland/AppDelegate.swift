@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: NotchWindowController?
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
+    private var welcomeWindow: NSWindow?
     private var globalClickMonitor: Any?
     private var keyMonitor: Any?
     private var cancellables: Set<AnyCancellable> = []
@@ -48,6 +49,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupEventMonitors()
         observePreferences()
         observeVisibility()
+        showWelcomeIfNeeded()
+    }
+
+    /// Accessory app açılışta hiçbir pencere göstermez; ilk çalıştırmada kullanıcı
+    /// uygulamanın varlığını fark edemeyebilir. Tek seferlik karşılama penceresi
+    /// adanın yerini öğretir ve login item seçeneğini sunar.
+    private func showWelcomeIfNeeded() {
+        let key = "pref.hasSeenWelcome"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+
+        let controller = NSHostingController(
+            rootView: WelcomeView { [weak self] in
+                guard let self else { return }
+                self.welcomeWindow?.close()
+                // Adanın yerini bir kez göster; kısa süre sonra kendiliğinden kapanır.
+                self.viewModel.expand(tab: .home)
+                self.viewModel.collapse(afterDelay: 5)
+            }
+            .environmentObject(prefs)
+        )
+        let window = NSWindow(contentViewController: controller)
+        window.styleMask = [.titled, .closable, .fullSizeContentView]
+        window.title = "Hoş Geldiniz"
+        window.titlebarAppearsTransparent = true
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        welcomeWindow = window
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -172,8 +204,9 @@ extension AppDelegate: NSWindowDelegate {
     /// Ayarlar penceresi kapanınca içeriğiyle birlikte bırakılır; aksi halde
     /// gizli penceredeki canlı önizleme timer'ları sonsuza dek çalışmaya devam eder.
     func windowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow, window === settingsWindow else { return }
-        settingsWindow = nil
+        guard let window = notification.object as? NSWindow else { return }
+        if window === settingsWindow { settingsWindow = nil }
+        if window === welcomeWindow { welcomeWindow = nil }
     }
 }
 

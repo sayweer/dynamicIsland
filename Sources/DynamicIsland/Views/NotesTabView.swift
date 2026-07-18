@@ -8,6 +8,9 @@ struct NotesTabView: View {
 
     @State private var newNote = ""
     @State private var newBookmark = ""
+    @State private var editingNoteID: UUID?
+    @State private var editingText = ""
+    @FocusState private var editFocused: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
@@ -36,6 +39,7 @@ struct NotesTabView: View {
                         .foregroundStyle(.yellow)
                 }
                 .buttonStyle(IslandButtonStyle())
+                .accessibilityLabel("Not ekle")
             }
             if notes.notes.isEmpty {
                 Text("Aklınızdakini hemen buraya bırakın.")
@@ -47,12 +51,43 @@ struct NotesTabView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         ForEach(notes.notes) { note in
                             HStack(alignment: .top, spacing: 6) {
-                                Text(note.text)
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.85))
-                                    .lineLimit(3)
-                                    .textSelection(.enabled)
+                                if editingNoteID == note.id {
+                                    TextField("", text: $editingText, axis: .vertical)
+                                        .textFieldStyle(.plain)
+                                        .font(.caption)
+                                        .foregroundStyle(.white)
+                                        .focused($editFocused)
+                                        .onSubmit(commitNoteEdit)
+                                } else {
+                                    Text(note.text)
+                                        .font(.caption)
+                                        .foregroundStyle(.white.opacity(0.85))
+                                        .lineLimit(3)
+                                        .textSelection(.enabled)
+                                }
                                 Spacer(minLength: 4)
+                                if editingNoteID == note.id {
+                                    Button(action: commitNoteEdit) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(.green)
+                                    }
+                                    .buttonStyle(IslandButtonStyle())
+                                    .accessibilityLabel("Düzenlemeyi kaydet")
+                                } else {
+                                    Button {
+                                        editingNoteID = note.id
+                                        editingText = note.text
+                                        editFocused = true
+                                    } label: {
+                                        Image(systemName: "pencil")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(.white.opacity(0.3))
+                                    }
+                                    .buttonStyle(IslandButtonStyle())
+                                    .help("Düzenle")
+                                    .accessibilityLabel("Notu düzenle")
+                                }
                                 Button {
                                     withAnimation(Motion.standard) { notes.removeNote(note) }
                                 } label: {
@@ -61,6 +96,7 @@ struct NotesTabView: View {
                                         .foregroundStyle(.white.opacity(0.3))
                                 }
                                 .buttonStyle(IslandButtonStyle())
+                                .accessibilityLabel("Notu sil")
                             }
                             .padding(7)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -96,6 +132,7 @@ struct NotesTabView: View {
                         .foregroundStyle(.blue)
                 }
                 .buttonStyle(IslandButtonStyle())
+                .accessibilityLabel("Yer imi ekle")
             }
             if notes.bookmarks.isEmpty {
                 Text("Sık kullandığınız bağlantıları kaydedin.")
@@ -124,6 +161,7 @@ struct NotesTabView: View {
                                         .foregroundStyle(.white.opacity(0.3))
                                 }
                                 .buttonStyle(IslandButtonStyle())
+                                .accessibilityLabel("Yer imini sil")
                             }
                             .padding(7)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -155,6 +193,14 @@ struct NotesTabView: View {
     private func addNote() {
         notes.addNote(newNote)
         newNote = ""
+    }
+
+    private func commitNoteEdit() {
+        if let id = editingNoteID, let note = notes.notes.first(where: { $0.id == id }) {
+            notes.updateNote(note, text: editingText)
+        }
+        editingNoteID = nil
+        editingText = ""
     }
 
     private func addBookmark() {

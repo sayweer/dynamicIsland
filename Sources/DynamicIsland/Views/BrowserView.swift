@@ -34,6 +34,8 @@ struct BrowserView: View {
                         .foregroundStyle(.white)
                         .focused($addressFocused)
                         .onSubmit { browser.submit() }
+                        // Odaktayken URL değişimleri yazılan metni ezmesin.
+                        .onChange(of: addressFocused) { browser.isEditingAddress = $0 }
                 }
                 .padding(.horizontal, 9)
                 .padding(.vertical, 5)
@@ -56,7 +58,29 @@ struct BrowserView: View {
                 .help("Varsayılan tarayıcıda aç")
             }
 
-            if browser.hasPage {
+            if browser.loadFailed {
+                VStack(spacing: 10) {
+                    Spacer()
+                    Image(systemName: "wifi.exclamationmark")
+                        .font(.system(size: 28))
+                        .foregroundStyle(.white.opacity(0.25))
+                    Text("Sayfa yüklenemedi")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.55))
+                    Text("Bağlantınızı kontrol edip yeniden deneyin")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.35))
+                    Button("Yeniden Dene") { browser.retry() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.04))
+                )
+            } else if browser.hasPage {
                 WebViewRepresentable(webView: browser.webView)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(

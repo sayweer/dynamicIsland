@@ -90,15 +90,18 @@ final class NotchWindowController {
         // mouseMoved monitörü + ekran-koordinatında ada rect testi. Accessory
         // app'te, key olmayan panelde, başka uygulama önplandayken de çalışır
         // (gerçek fareyle kanıtlandı); izin gerektirmez.
+        // Panel gizliyken (orderOut) frame bayat/zero kalır — hoverRect o durumda
+        // ekranda "hayalet" bir bölge üretir; görünürlük şartı bunu keser.
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self else { return }
+                guard let self, self.panel.isVisible else { return }
                 self.updateHover(inside: self.hoverRect().contains(NSEvent.mouseLocation))
             }
         }
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
             if let self {
                 MainActor.assumeIsolated {
+                    guard self.panel.isVisible else { return }
                     self.updateHover(inside: self.hoverRect().contains(NSEvent.mouseLocation))
                 }
             }
@@ -175,11 +178,11 @@ final class NotchWindowController {
     /// yalnızca içindeki SwiftUI adasının boyutunu değiştirir, pencereyi değil.
     func applyFrame() {
         guard let screen = ScreenGeometry.targetScreen else {
-            panel.orderOut(nil)
+            hidePanel()
             return
         }
         if !screen.hasNotch && !Preferences.shared.showOnNotchlessScreens {
-            panel.orderOut(nil)
+            hidePanel()
             return
         }
         viewModel.refreshGeometry()
@@ -197,5 +200,15 @@ final class NotchWindowController {
         if !panel.isVisible {
             panel.orderFrontRegardless()
         }
+    }
+
+    /// Paneli gizlerken adayı da kapat: `orderOut` SwiftUI hiyerarşisini sökmez,
+    /// bu yüzden collapse edilmezse kamera oturumu görünmez pencerede çalışmaya
+    /// (yeşil ışık yanık) ve monitörler hızlı örneklemede kalmaya devam eder.
+    private func hidePanel() {
+        guard panel.isVisible else { return }
+        hoverInside = false
+        viewModel.collapseNow()
+        panel.orderOut(nil)
     }
 }

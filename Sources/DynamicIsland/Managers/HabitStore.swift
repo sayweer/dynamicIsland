@@ -68,7 +68,9 @@ final class HabitStore: ObservableObject {
         events.removeAll { $0.id == event.id }
     }
 
-    private func rolloverIfNeeded() {
+    /// Gün devri görüntüleme yolunda da çağrılır (WaterCard.onAppear): uygulama
+    /// gece yarısını açık geçirirse dünkü sayaç butona basılana dek görünmesin.
+    func rolloverIfNeeded() {
         let today = Self.todayKey()
         if waterDay != today {
             waterDay = today

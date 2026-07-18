@@ -39,6 +39,16 @@ final class NotesStore: ObservableObject {
         notes.removeAll { $0.id == note.id }
     }
 
+    func updateNote(_ note: QuickNote, text: String) {
+        guard let index = notes.firstIndex(where: { $0.id == note.id }) else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            notes.remove(at: index)
+        } else {
+            notes[index].text = trimmed
+        }
+    }
+
     func addBookmark(title: String, urlString: String) {
         var normalized = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return }

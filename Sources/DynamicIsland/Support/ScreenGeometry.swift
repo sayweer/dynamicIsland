@@ -2,9 +2,10 @@ import AppKit
 
 enum ScreenGeometry {
     /// The screen that hosts the island: prefer a screen with a physical notch,
-    /// otherwise fall back to the main screen (simulated notch).
+    /// otherwise the primary screen (simulated notch). `NSScreen.main` bilerek
+    /// kullanılmıyor: key window'a göre değişir ve ada ekranlar arasında "atlar".
     static var targetScreen: NSScreen? {
-        NSScreen.screens.first(where: { $0.hasNotch }) ?? NSScreen.main
+        NSScreen.screens.first(where: { $0.hasNotch }) ?? NSScreen.screens.first
     }
 }
 

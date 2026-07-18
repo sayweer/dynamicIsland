@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import UserNotifications
 
 /// Pomodoro, countdown and stopwatch in one engine with a single tick source.
 @MainActor
@@ -51,9 +52,11 @@ final class TimerCenter: ObservableObject {
 
     private func tick() {
         let now = Date()
+        // Duvar saatine bağlı ilerleme: Mac uyusa da geri sayım/pomodoro gerçek
+        // zamana göre biter (uyku deltası yutulursa sayaç "geç" bitiyordu).
         let delta = now.timeIntervalSince(lastTick)
         lastTick = now
-        guard delta > 0, delta < 10 else { return }
+        guard delta > 0 else { return }
 
         if pomodoroRunning {
             pomodoroRemaining -= delta
@@ -66,7 +69,7 @@ final class TimerCenter: ObservableObject {
             if countdownRemaining <= 0 {
                 countdownRemaining = 0
                 countdownRunning = false
-                notifyDone()
+                notifyDone(message: "Geri sayım bitti")
             }
         }
         if stopwatchRunning {
@@ -75,20 +78,47 @@ final class TimerCenter: ObservableObject {
     }
 
     private func advancePomodoroPhase() {
-        notifyDone()
         if pomodoroPhase == .work {
+            notifyDone(message: "Odak süresi bitti — mola zamanı")
             pomodoroCycles += 1
             pomodoroPhase = .rest
             pomodoroRemaining = TimeInterval(breakMinutes * 60)
         } else {
+            notifyDone(message: "Mola bitti — odak zamanı")
             pomodoroPhase = .work
             pomodoroRemaining = TimeInterval(workMinutes * 60)
         }
     }
 
-    private func notifyDone() {
+    private func notifyDone(message: String) {
         NSSound(named: "Glass")?.play()
         NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+        postNotification(message)
+    }
+
+    // MARK: - Sistem bildirimi
+
+    /// Ses kapalıyken ya da kullanıcı Mac'ten uzaktayken bitiş kaçmasın diye
+    /// sistem bildirimi de gönderilir. Bundle dışı çalıştırmada (swift run)
+    /// UNUserNotificationCenter crash ettiği için bundle kontrolüyle korunur.
+    private var notificationAuthRequested = false
+
+    /// Zamanlayıcı BAŞLARKEN istenir; bitişte istemek ilk bildirimi kaçırırdı.
+    private func requestNotificationAuthIfNeeded() {
+        guard Bundle.main.bundleIdentifier != nil, !notificationAuthRequested else { return }
+        notificationAuthRequested = true
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in }
+    }
+
+    private func postNotification(_ message: String) {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Dynamic Island"
+        content.body = message
+        // Ses zaten NSSound ile çalınıyor; bildirim sessiz kalsın (çift ses olmasın).
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        )
     }
 
     // MARK: - Pomodoro controls
@@ -96,6 +126,7 @@ final class TimerCenter: ObservableObject {
     func pomodoroToggle() {
         pomodoroRunning.toggle()
         lastTick = Date()
+        if pomodoroRunning { requestNotificationAuthIfNeeded() }
     }
 
     func pomodoroReset() {
@@ -113,6 +144,7 @@ final class TimerCenter: ObservableObject {
         }
         countdownRunning = true
         lastTick = Date()
+        requestNotificationAuthIfNeeded()
     }
 
     func countdownPause() { countdownRunning = false }

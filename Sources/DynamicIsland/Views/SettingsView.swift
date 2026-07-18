@@ -328,6 +328,8 @@ private struct DataSettings: View {
     @EnvironmentObject private var prefs: Preferences
     @EnvironmentObject private var shelf: ShelfManager
     @EnvironmentObject private var clipboard: ClipboardManager
+    @State private var confirmClearClipboard = false
+    @State private var confirmClearShelf = false
 
     var body: some View {
         SettingsCard("Pano Geçmişi") {
@@ -346,14 +348,32 @@ private struct DataSettings: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button("Pano Geçmişini Temizle (\(clipboard.items.count) öğe)") {
-                clipboard.clearAll()
+                confirmClearClipboard = true
+            }
+            .disabled(clipboard.items.isEmpty)
+            .confirmationDialog(
+                "\(clipboard.items.count) öğelik pano geçmişi silinsin mi?",
+                isPresented: $confirmClearClipboard
+            ) {
+                Button("Temizle", role: .destructive) { clipboard.clearAll() }
+            } message: {
+                Text("Bu işlem geri alınamaz.")
             }
         }
 
         SettingsCard("Raf") {
             Toggle("Uygulamadan çıkarken rafı temizle", isOn: $prefs.clearShelfOnQuit)
             Button("Rafı Şimdi Temizle (\(shelf.items.count) öğe)") {
-                shelf.removeAll()
+                confirmClearShelf = true
+            }
+            .disabled(shelf.items.isEmpty)
+            .confirmationDialog(
+                "Raftaki \(shelf.items.count) öğe silinsin mi?",
+                isPresented: $confirmClearShelf
+            ) {
+                Button("Temizle", role: .destructive) { shelf.removeAll() }
+            } message: {
+                Text("Raf kopyaları kalıcı olarak silinir; bu işlem geri alınamaz.")
             }
         }
     }
@@ -380,6 +400,18 @@ private struct AboutSettings: View {
             Text("MacBook çentiğini etkileşimli bir merkeze dönüştüren ücretsiz uygulama: dosya rafı, AirDrop, müzik kontrolü, son 20 öğelik pano geçmişi, pomodoro, takvim, kamera aynası ve daha fazlası. Reklam yok, pop-up yok, abonelik yok.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+
+        SettingsCard("Bağlantılar") {
+            Link("GitHub deposu", destination: URL(string: "https://github.com/sayweer/dynamicIsland")!)
+            Link(
+                "Sürümler ve güncellemeler",
+                destination: URL(string: "https://github.com/sayweer/dynamicIsland/releases")!
+            )
+            Link(
+                "Hata bildir / öneri gönder",
+                destination: URL(string: "https://github.com/sayweer/dynamicIsland/issues")!
+            )
         }
     }
 }
@@ -520,7 +552,14 @@ private struct CollapsedPreview: View {
                         }
                     }
                 case .battery:
-                    Text("%84 🔋").font(.system(size: 10))
+                    // Gerçek kapalı moddaki batteryMini ile aynı görsel dil.
+                    HStack(spacing: 3) {
+                        Text("%84")
+                            .font(.caption.monospacedDigit().weight(.medium))
+                        Image(systemName: "battery.75")
+                            .font(.system(size: 11))
+                    }
+                    .foregroundStyle(.white.opacity(0.85))
                 case .network:
                     Text("↓ 1.2 MB/s")
                         .font(.system(size: 8).monospacedDigit())
@@ -605,22 +644,12 @@ struct SettingsQuickView: View {
 
             Divider().overlay(Color.white.opacity(0.1))
             HStack(spacing: 10) {
-                Button {
+                ConfirmingButton(title: "Panoyu temizle", systemImage: "trash", tint: .white.opacity(0.6)) {
                     clipboard.clearAll()
-                } label: {
-                    Label("Panoyu temizle", systemImage: "trash")
-                        .font(.caption2)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white.opacity(0.6))
-                Button {
+                ConfirmingButton(title: "Rafı temizle", systemImage: "tray", tint: .white.opacity(0.6)) {
                     shelf.removeAll()
-                } label: {
-                    Label("Rafı temizle", systemImage: "tray")
-                        .font(.caption2)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white.opacity(0.6))
             }
             Spacer()
             HStack {

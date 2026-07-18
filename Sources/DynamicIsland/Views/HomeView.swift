@@ -52,6 +52,29 @@ struct MusicCard: View {
                 if playing.isWeb && music.webJSPermissionMissing {
                     permissionHint
                 }
+            } else if music.automationDenied {
+                // Otomasyon izni reddedilmiş: müzik çalıyor olsa bile okuyamayız.
+                // "Müzik çalmıyor" demek yanıltıcı olur; kurtarma yolunu göster.
+                VStack(spacing: 8) {
+                    Spacer()
+                    Image(systemName: "lock.shield")
+                        .font(.system(size: 26))
+                        .foregroundStyle(.white.opacity(0.25))
+                    Text("Otomasyon izni gerekli")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                    Text("Müzik bilgisini okumak için Dynamic Island'a izin verin")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.3))
+                        .multilineTextAlignment(.center)
+                    Button("Sistem Ayarları'nı Aç") {
+                        SystemSettingsPane.automation.open()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
             } else {
                 VStack(spacing: 8) {
                     Spacer()
@@ -184,7 +207,7 @@ struct AirDropZone: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: "airplayaudio")
+            Image(systemName: "dot.radiowaves.left.and.right")
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(isTargeted ? prefs.accentColor : .white.opacity(0.7))
             Text("AirDrop")
@@ -277,7 +300,7 @@ struct ShortcutsRow: View {
             CardTitle("Kısayollar", symbol: "square.grid.2x2")
             Spacer()
             if shortcuts.shortcuts.isEmpty {
-                Text("Uygulama eklemek için")
+                Text("Eklemek için + düğmesine tıklayın")
                     .font(.system(size: 9))
                     .foregroundStyle(.white.opacity(0.3))
             }
@@ -291,6 +314,7 @@ struct ShortcutsRow: View {
                 }
                 .buttonStyle(IslandButtonStyle())
                 .help(shortcut.name)
+                .accessibilityLabel("\(shortcut.name) uygulamasını aç")
                 .contextMenu {
                     Button("Kaldır") { shortcuts.remove(shortcut) }
                 }
@@ -306,6 +330,7 @@ struct ShortcutsRow: View {
             }
             .buttonStyle(IslandButtonStyle())
             .help("Uygulama ekle")
+            .accessibilityLabel("Uygulama ekle")
         }
         .padding(.horizontal, 10)
         .frame(height: 44)

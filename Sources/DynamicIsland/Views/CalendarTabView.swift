@@ -52,10 +52,15 @@ struct CalendarTabView: View {
             Text("Takvim erişimi reddedildi")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.white.opacity(0.6))
-            Text("Sistem Ayarları → Gizlilik ve Güvenlik → Takvimler bölümünden izin verebilirsiniz")
+            Text("Gizlilik ve Güvenlik → Takvimler bölümünden izin verebilirsiniz")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.35))
                 .multilineTextAlignment(.center)
+            Button("Sistem Ayarları'nı Aç") {
+                SystemSettingsPane.calendars.open()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
             Spacer()
         }
         .frame(maxWidth: .infinity)

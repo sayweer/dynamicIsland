@@ -12,8 +12,16 @@ enum DropUtilities {
             group.enter()
             provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
                 defer { group.leave() }
-                guard let data = item as? Data,
-                      let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+                // Kaynak uygulamaya göre öğe Data (bookmark) ya da NSURL gelebilir.
+                let url: URL?
+                if let direct = item as? URL {
+                    url = direct
+                } else if let data = item as? Data {
+                    url = URL(dataRepresentation: data, relativeTo: nil)
+                } else {
+                    url = nil
+                }
+                guard let url else { return }
                 lock.lock()
                 urls.append(url)
                 lock.unlock()

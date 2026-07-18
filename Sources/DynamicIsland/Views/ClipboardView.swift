@@ -15,14 +15,9 @@ struct ClipboardView: View {
                 )
                 Spacer()
                 if !clipboard.items.isEmpty {
-                    Button {
+                    ConfirmingButton(title: "Temizle", systemImage: "trash") {
                         clipboard.clearAll()
-                    } label: {
-                        Label("Temizle", systemImage: "trash")
-                            .font(.caption2)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.white.opacity(0.5))
                 }
             }
             if clipboard.items.isEmpty {
@@ -121,6 +116,7 @@ private struct ClipboardRow: View {
                 }
                 .buttonStyle(.plain)
                 .help("Yeniden kopyala")
+                .accessibilityLabel("Yeniden kopyala")
                 Button(action: onDelete) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 11))
@@ -128,6 +124,7 @@ private struct ClipboardRow: View {
                 }
                 .buttonStyle(.plain)
                 .help("Sil")
+                .accessibilityLabel("Sil")
             }
         }
         .padding(.horizontal, 8)

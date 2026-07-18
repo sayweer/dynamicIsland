@@ -49,9 +49,10 @@ struct PomodoroCard: View {
             HStack {
                 RoundIconButton(
                     symbol: timers.pomodoroRunning ? "pause.fill" : "play.fill",
-                    tint: .red
+                    tint: .red,
+                    label: timers.pomodoroRunning ? "Pomodoro'yu duraklat" : "Pomodoro'yu başlat"
                 ) { timers.pomodoroToggle() }
-                RoundIconButton(symbol: "arrow.counterclockwise", tint: .gray) {
+                RoundIconButton(symbol: "arrow.counterclockwise", tint: .gray, label: "Pomodoro'yu sıfırla") {
                     timers.pomodoroReset()
                 }
                 Spacer()
@@ -90,11 +91,12 @@ struct CountdownCard: View {
             HStack {
                 RoundIconButton(
                     symbol: timers.countdownRunning ? "pause.fill" : "play.fill",
-                    tint: .orange
+                    tint: .orange,
+                    label: timers.countdownRunning ? "Geri sayımı duraklat" : "Geri sayımı başlat"
                 ) {
                     timers.countdownRunning ? timers.countdownPause() : timers.countdownStart()
                 }
-                RoundIconButton(symbol: "arrow.counterclockwise", tint: .gray) {
+                RoundIconButton(symbol: "arrow.counterclockwise", tint: .gray, label: "Geri sayımı sıfırla") {
                     timers.countdownReset()
                 }
                 Spacer()
@@ -124,9 +126,10 @@ struct StopwatchCard: View {
             HStack {
                 RoundIconButton(
                     symbol: timers.stopwatchRunning ? "pause.fill" : "play.fill",
-                    tint: .cyan
+                    tint: .cyan,
+                    label: timers.stopwatchRunning ? "Kronometreyi duraklat" : "Kronometreyi başlat"
                 ) { timers.stopwatchToggle() }
-                RoundIconButton(symbol: "arrow.counterclockwise", tint: .gray) {
+                RoundIconButton(symbol: "arrow.counterclockwise", tint: .gray, label: "Kronometreyi sıfırla") {
                     timers.stopwatchReset()
                 }
                 Spacer()
@@ -159,13 +162,16 @@ struct WaterCard: View {
                 .animation(Motion.standard, value: habits.waterCount)
             Spacer(minLength: 0)
             HStack {
-                RoundIconButton(symbol: "minus", tint: .gray) { habits.undoWater() }
-                RoundIconButton(symbol: "plus", tint: .blue) { habits.drinkWater() }
+                RoundIconButton(symbol: "minus", tint: .gray, label: "Bir bardak çıkar") { habits.undoWater() }
+                RoundIconButton(symbol: "plus", tint: .blue, label: "Bir bardak ekle") { habits.drinkWater() }
                 Spacer()
                 MiniStepper(label: "Hedef", value: $habits.waterGoal, range: 1...20)
             }
         }
         .islandCard()
+        // Gün devri görüntülenirken de işlenir: gece yarısından sonra ilk açılışta
+        // dünkü sayaç görünmesin (aksi halde ancak +/- basınca sıfırlanıyordu).
+        .onAppear { habits.rolloverIfNeeded() }
     }
 }
 
@@ -184,8 +190,8 @@ struct CounterCard: View {
                 .frame(maxWidth: .infinity)
             Spacer(minLength: 0)
             HStack {
-                RoundIconButton(symbol: "minus", tint: .gray) { habits.counterValue -= 1 }
-                RoundIconButton(symbol: "plus", tint: .mint) { habits.counterValue += 1 }
+                RoundIconButton(symbol: "minus", tint: .gray, label: "Sayacı azalt") { habits.counterValue -= 1 }
+                RoundIconButton(symbol: "plus", tint: .mint, label: "Sayacı artır") { habits.counterValue += 1 }
                 Spacer()
                 Button("Sıfırla") { habits.counterValue = 0 }
                     .buttonStyle(.plain)
@@ -287,6 +293,7 @@ struct DaysLeftCard: View {
                                 .foregroundStyle(.white.opacity(0.3))
                         }
                         .buttonStyle(IslandButtonStyle())
+                        .accessibilityLabel("\(event.name) etkinliğini sil")
                     }
                     .padding(.vertical, 2)
                     .transition(.opacity)
@@ -315,6 +322,7 @@ struct DaysLeftCard: View {
                         .foregroundStyle(.pink)
                 }
                 .buttonStyle(IslandButtonStyle())
+                .accessibilityLabel("Etkinlik ekle")
             }
         }
         .islandCard()
@@ -326,6 +334,7 @@ struct DaysLeftCard: View {
 struct RoundIconButton: View {
     let symbol: String
     let tint: Color
+    let label: String
     let action: () -> Void
 
     var body: some View {
@@ -339,6 +348,7 @@ struct RoundIconButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(IslandButtonStyle())
+        .accessibilityLabel(label)
     }
 }
 
@@ -363,6 +373,7 @@ struct MiniStepper: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(IslandButtonStyle())
+                .accessibilityLabel("\(label) artır")
                 Button {
                     if value > range.lowerBound { value -= 1 }
                 } label: {
@@ -373,6 +384,7 @@ struct MiniStepper: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(IslandButtonStyle())
+                .accessibilityLabel("\(label) azalt")
             }
         }
     }

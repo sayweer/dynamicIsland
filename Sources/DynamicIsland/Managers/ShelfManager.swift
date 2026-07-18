@@ -84,8 +84,16 @@ final class ShelfManager: ObservableObject {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
                 handled = true
                 provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                    guard let data = item as? Data,
-                          let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+                    // Kaynak uygulamaya göre öğe Data (bookmark) ya da NSURL gelebilir.
+                    let url: URL?
+                    if let direct = item as? URL {
+                        url = direct
+                    } else if let data = item as? Data {
+                        url = URL(dataRepresentation: data, relativeTo: nil)
+                    } else {
+                        url = nil
+                    }
+                    guard let url else { return }
                     Task { @MainActor in self.add(fileURL: url) }
                 }
             } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {

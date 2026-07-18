@@ -31,8 +31,15 @@ final class MusicManager: ObservableObject {
     /// Web Spotify çalıyor ama tarayıcıda "Apple Events'ten JavaScript'e izin ver"
     /// kapalı → süre/ilerleme okunamıyor, seek çalışmıyor. UI kullanıcıyı bilgilendirir.
     @Published private(set) var webJSPermissionMissing = false
+    /// Otomasyon (Apple Events) izni reddedildi (-1743): oynatıcı çalışıyor olsa
+    /// bile durumu okuyamayız. UI yanıltıcı "müzik çalmıyor" yerine izin
+    /// yönlendirmesi gösterir.
+    @Published private(set) var automationDenied = false
 
     private var timer: Timer?
+    /// Reentrancy koruması: bir poll turu aralıktan uzun sürerse (ör. çok sekmeli
+    /// Chrome taraması) kuyruğa yenisi eklenmez — Apple Events seli birikmez.
+    private var pollInFlight = false
     private var lastArtworkKey = ""
     private let scriptQueue = DispatchQueue(label: "dynamicisland.music", qos: .utility)
     private let artworkCache = NSCache<NSString, NSImage>()
@@ -102,14 +109,18 @@ final class MusicManager: ObservableObject {
                 lastArtworkKey = ""
             }
             webJSPermissionMissing = false
+            automationDenied = false
             lastWebTrack = nil
             applyPollInterval(active: false)
             return
         }
+        guard !pollInFlight else { return }
+        pollInFlight = true
 
         let lastWeb = lastWebTrack
         let startGen = seekGeneration
         scriptQueue.async { [weak self] in
+            Self.sawAutomationDenied = false
             var spotify: NowPlaying?
             var music: NowPlaying?
             var spotifyArtURL: String?
@@ -197,9 +208,12 @@ final class MusicManager: ObservableObject {
             let chosen = candidates.first(where: { $0.isPlaying }) ?? candidates.first
             let webResult = web
             let sawWebTabResult = sawWebTab
+            let denied = Self.sawAutomationDenied
 
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                self.pollInFlight = false
+                self.automationDenied = denied
                 var final = chosen
                 // Bu poll seek'ten ÖNCE başladıysa (startGen < seek'in kuşağı) raporladığı
                 // pozisyon bayattır; hedefi kullan ki scrubber geri zıplamasın.
@@ -526,6 +540,10 @@ final class MusicManager: ObservableObject {
         return result.components(separatedBy: "|~|")
     }
 
+    /// Bu poll turunda -1743 (otomasyon izni reddedildi) görüldü mü.
+    /// Yalnızca seri `scriptQueue` üzerinde okunup yazılır — yarış yok.
+    nonisolated(unsafe) private static var sawAutomationDenied = false
+
     nonisolated private static func runScript(_ source: String) -> String? {
         runScriptDescriptor(source)?.stringValue
     }
@@ -537,6 +555,9 @@ final class MusicManager: ObservableObject {
         if let error {
             // Hata numarası -1743 → otomasyon (Apple Events) izni verilmemiş.
             // Böylece "izin yok" ile "çalmıyor" ayırt edilebilir; sessizce yutulmuyor.
+            if (error[NSAppleScript.errorNumber] as? Int) == -1743 {
+                sawAutomationDenied = true
+            }
             log.error("AppleScript hatası: \(error, privacy: .public)")
             return nil
         }

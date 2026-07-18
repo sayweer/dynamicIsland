@@ -16,6 +16,42 @@ enum Motion {
 /// Ada içindeki ikon/metin butonları için ortak geri bildirim: hover'da hafif
 /// büyüme, press'te küçülme + sönükleşme. Ölçek düzeni etkilemediğinden her
 /// `.plain` butona güvenle uygulanabilir (layout kaymaz).
+/// Yıkıcı toplu işlemler (rafı/panoyu temizle) için yerinde iki-adımlı onay:
+/// ilk tıklama düğmeyi "Emin misiniz?" durumuna geçirir, ikinci tıklama eylemi
+/// çalıştırır. Ada panelinde diyalog/sheet açmak odak çaldığı için onay yerinde
+/// gösterilir; 3 sn içinde onaylanmazsa düğme eski hâline döner.
+struct ConfirmingButton: View {
+    let title: String
+    let systemImage: String
+    var tint: Color = .white.opacity(0.5)
+    let action: () -> Void
+
+    @State private var armed = false
+
+    var body: some View {
+        Button {
+            if armed {
+                armed = false
+                action()
+            } else {
+                withAnimation(Motion.quick) { armed = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    withAnimation(Motion.quick) { armed = false }
+                }
+            }
+        } label: {
+            Label(
+                armed ? "Emin misiniz?" : title,
+                systemImage: armed ? "exclamationmark.triangle.fill" : systemImage
+            )
+            .font(.caption2)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(armed ? Color.red : tint)
+        .accessibilityLabel(armed ? "\(title) — onayla" : title)
+    }
+}
+
 struct IslandButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         IslandButtonBody(configuration: configuration)
