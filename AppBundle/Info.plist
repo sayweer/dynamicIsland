@@ -11,9 +11,9 @@
 	<key>CFBundleExecutable</key>
 	<string>DynamicIsland</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.5.0</string>
+	<string>0.4.0</string>
 	<key>CFBundleVersion</key>
-	<string>5</string>
+	<string>4</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundlePackageType</key>
@@ -29,9 +29,7 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Kamera aynası ve iPhone monitörü özelliği, çentikte hızlı görünüş kontrolü ve telefon kamerası önizlemesi için kameranızı kullanır.</string>
-	<key>NSCameraUseContinuityCameraDeviceType</key>
-	<true/>
+	<string>Kamera aynası özelliği, çentikte hızlı görünüş kontrolü için kameranızı kullanır.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Apple Music ve Spotify'daki çalan parçayı görüntülemek ve kontrol etmek için kullanılır.</string>
 	<key>NSCalendarsUsageDescription</key>

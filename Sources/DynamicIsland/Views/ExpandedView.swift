@@ -65,7 +65,6 @@ struct ExpandedView: View {
         case .tools: ToolsView()
         case .calendar: CalendarTabView()
         case .camera: CameraTabView()
-        case .phoneMonitor: PhoneMonitorTabView()
         case .browser: BrowserView()
         case .notes: NotesTabView()
         case .settings: SettingsQuickView()

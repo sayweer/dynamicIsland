@@ -17,7 +17,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let shortcuts = AppShortcutsStore()
     let calendar = CalendarManager()
     let camera = CameraManager()
-    let phoneMonitor = PhoneMonitorManager()
     let browser = BrowserModel()
 
     private var windowController: NotchWindowController?
@@ -44,14 +43,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .environmentObject(shortcuts)
             .environmentObject(calendar)
             .environmentObject(camera)
-            .environmentObject(phoneMonitor)
             .environmentObject(browser)
         windowController = NotchWindowController(viewModel: viewModel, rootView: root)
         setupStatusItem()
         setupEventMonitors()
         observePreferences()
         observeVisibility()
-        observePhoneMonitor()
         showWelcomeIfNeeded()
     }
 
@@ -124,17 +121,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         viewModel.$isExpanded
             .filter { $0 }
             .sink { [weak self] _ in self?.music.refresh() }
-            .store(in: &cancellables)
-    }
-
-    /// iPhone algılamasını yalnızca modül etkinken çalıştırır: kapalıyken hiçbir
-    /// CMIO opt-in / observer kurulmaz (enerji + gizlilik). Modül aç/kapa anında
-    /// algılama başlar/durur.
-    private func observePhoneMonitor() {
-        prefs.$enabledTabs
-            .map { $0.contains(IslandTab.phoneMonitor.rawValue) }
-            .removeDuplicates()
-            .sink { [weak self] enabled in self?.phoneMonitor.setDetectionActive(enabled) }
             .store(in: &cancellables)
     }
 

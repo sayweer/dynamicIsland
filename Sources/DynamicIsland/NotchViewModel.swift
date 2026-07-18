@@ -3,7 +3,7 @@ import Combine
 import SwiftUI
 
 enum IslandTab: String, CaseIterable, Identifiable {
-    case home, shelf, clipboard, tools, calendar, camera, phoneMonitor, browser, notes, settings
+    case home, shelf, clipboard, tools, calendar, camera, browser, notes, settings
 
     var id: String { rawValue }
 
@@ -15,7 +15,6 @@ enum IslandTab: String, CaseIterable, Identifiable {
         case .tools: return "timer"
         case .calendar: return "calendar"
         case .camera: return "web.camera.fill"
-        case .phoneMonitor: return "iphone"
         case .browser: return "safari.fill"
         case .notes: return "note.text"
         case .settings: return "gearshape.fill"
@@ -30,7 +29,6 @@ enum IslandTab: String, CaseIterable, Identifiable {
         case .tools: return "Araçlar"
         case .calendar: return "Takvim"
         case .camera: return "Ayna"
-        case .phoneMonitor: return "iPhone"
         case .browser: return "Tarayıcı"
         case .notes: return "Notlar"
         case .settings: return "Ayarlar"
